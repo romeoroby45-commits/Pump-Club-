@@ -1,0 +1,8 @@
+{
+  "name": "Pump Club",
+  "description": "الموقع الرسمي لجيم بامب كلوب الرياضي - اشتراكات، تدريب لياقة، ومعرض الصور والفيديوهات",
+  "requestFramePermissions": [],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}

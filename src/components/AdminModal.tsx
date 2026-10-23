@@ -2,11 +2,19 @@ import React, { useState, useEffect } from 'react';
 import {
   X, Lock, ShieldCheck, Settings, Camera, Film, CreditCard,
   Plus, Trash2, Edit2, Check, ArrowUp, ArrowDown, ExternalLink,
-  Save, RefreshCw, LogOut, MessageSquare, AlertCircle
+  Save, RefreshCw, LogOut, MessageSquare, AlertCircle, Upload,
+  Cloud, CheckCircle2
 } from 'lucide-react';
 import { GymPhoto, GymReel, GymSettings, SubscriptionPlan } from '../types';
 import { api } from '../services/api';
 import { parseVideoUrl } from '../utils/videoHelper';
+import {
+  auth,
+  signInAdminWithGoogle,
+  logOutAdmin,
+  subscribeToAuthState,
+  seedFirestoreIfEmpty
+} from '../services/firebase';
 
 interface AdminModalProps {
   isOpen: boolean;
@@ -30,6 +38,7 @@ export const AdminModal: React.FC<AdminModalProps> = ({
   const [isAuthenticated, setIsAuthenticated] = useState<boolean>(() => {
     return sessionStorage.getItem('pump_admin_auth') === 'true';
   });
+  const [currentUser, setCurrentUser] = useState<any>(null);
 
   // Login form state
   const [username, setUsername] = useState('');
@@ -45,6 +54,8 @@ export const AdminModal: React.FC<AdminModalProps> = ({
   const [settingsForm, setSettingsForm] = useState<GymSettings>({ ...settings });
   const [isSavingSettings, setIsSavingSettings] = useState(false);
   const [settingsSuccess, setSettingsSuccess] = useState(false);
+  const [isSeeding, setIsSeeding] = useState(false);
+  const [seedSuccess, setSeedSuccess] = useState(false);
 
   // Photo state
   const [newPhotoUrl, setNewPhotoUrl] = useState('');
@@ -53,6 +64,7 @@ export const AdminModal: React.FC<AdminModalProps> = ({
   const [editPhotoUrl, setEditPhotoUrl] = useState('');
   const [editPhotoTitle, setEditPhotoTitle] = useState('');
   const [photoError, setPhotoError] = useState('');
+  const [isUploadingPhoto, setIsUploadingPhoto] = useState(false);
 
   // Reel state
   const [newReelUrl, setNewReelUrl] = useState('');
@@ -88,6 +100,18 @@ export const AdminModal: React.FC<AdminModalProps> = ({
     setSettingsForm({ ...settings });
   }, [settings]);
 
+  // Listen to Firebase Auth state
+  useEffect(() => {
+    const unsub = subscribeToAuthState((u) => {
+      setCurrentUser(u);
+      if (u) {
+        setIsAuthenticated(true);
+        sessionStorage.setItem('pump_admin_auth', 'true');
+      }
+    });
+    return () => unsub();
+  }, []);
+
   useEffect(() => {
     if (isAuthenticated && activeTab === 'leads') {
       fetchLeads();
@@ -108,7 +132,7 @@ export const AdminModal: React.FC<AdminModalProps> = ({
 
   if (!isOpen) return null;
 
-  // Handle Login
+  // Handle Login with Username & Password
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoginError('');
@@ -129,11 +153,78 @@ export const AdminModal: React.FC<AdminModalProps> = ({
     }
   };
 
-  const handleLogout = () => {
+  // Handle Google Admin Login (Official Firebase Auth)
+  const handleGoogleLogin = async () => {
+    setLoginError('');
+    setIsLoggingIn(true);
+    try {
+      const user = await signInAdminWithGoogle();
+      setCurrentUser(user);
+      setIsAuthenticated(true);
+      sessionStorage.setItem('pump_admin_auth', 'true');
+    } catch (err: any) {
+      console.error('Google Sign-in failed:', err);
+      setLoginError(err.message || 'فشل تسجيل الدخول عبر Google');
+    } finally {
+      setIsLoggingIn(false);
+    }
+  };
+
+  const handleLogout = async () => {
     setIsAuthenticated(false);
     sessionStorage.removeItem('pump_admin_auth');
     setUsername('');
     setPassword('');
+    try {
+      await logOutAdmin();
+    } catch {}
+  };
+
+  // Upload photo file to Firebase Storage
+  const handleUploadPhotoFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setPhotoError('');
+    setIsUploadingPhoto(true);
+
+    try {
+      const cloudUrl = await api.uploadFile(file);
+      setNewPhotoUrl(cloudUrl);
+      if (!newPhotoTitle) {
+        setNewPhotoTitle(file.name.replace(/\.[^/.]+$/, ''));
+      }
+    } catch (err: any) {
+      setPhotoError(err.message || 'فشل رفع الصورة إلى التخزين السحابي');
+    } finally {
+      setIsUploadingPhoto(false);
+    }
+  };
+
+  // Seed default data to Firestore if empty
+  const handleSeedFirestore = async () => {
+    setIsSeeding(true);
+    setSeedSuccess(false);
+    try {
+      await seedFirestoreIfEmpty();
+      setSeedSuccess(true);
+      onDataUpdated();
+      setTimeout(() => setSeedSuccess(false), 3000);
+    } catch (err: any) {
+      alert(err.message || 'فشل تهيئة السحاب');
+    } finally {
+      setIsSeeding(false);
+    }
+  };
+
+  // Delete customer lead
+  const handleDeleteLead = async (id: string) => {
+    if (!window.confirm('هل أنت متأكد من حذف هذا الطلب؟')) return;
+    try {
+      await api.deleteSubscription(id);
+      fetchLeads();
+    } catch (err: any) {
+      alert(err.message || 'فشل حذف الطلب');
+    }
   };
 
   // Save General Settings
@@ -314,11 +405,30 @@ export const AdminModal: React.FC<AdminModalProps> = ({
               <ShieldCheck className="w-5 h-5" />
             </div>
             <div>
-              <h3 className="font-display font-black text-lg text-white tracking-wide">
-                لوحة تحكم إدارة <span className="text-red-500">PUMP CLUB</span>
-              </h3>
-              <p className="text-xs text-neutral-400">
-                {isAuthenticated ? 'متصل كمسؤول النظام (Admin)' : 'تسجيل دخول الإدارة المحمي'}
+              <div className="flex items-center gap-2">
+                <h3 className="font-display font-black text-lg text-white tracking-wide">
+                  لوحة تحكم إدارة <span className="text-red-500">PUMP CLUB</span>
+                </h3>
+                {isAuthenticated && (
+                  <span className="hidden sm:inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-emerald-950/70 border border-emerald-800 text-[10px] text-emerald-400 font-bold">
+                    <Cloud className="w-3 h-3 text-emerald-400 animate-pulse" />
+                    <span>سحابي مباشر (Cloud Live)</span>
+                  </span>
+                )}
+              </div>
+              <p className="text-xs text-neutral-400 flex items-center gap-2 mt-0.5">
+                {isAuthenticated ? (
+                  <>
+                    <span>متصل كمسؤول النظام (Admin)</span>
+                    {currentUser?.email && (
+                      <span className="text-emerald-400 font-mono text-[11px]">
+                        • {currentUser.email}
+                      </span>
+                    )}
+                  </>
+                ) : (
+                  'تسجيل دخول الإدارة المحمي بقاعدة البيانات السحابية'
+                )}
               </p>
             </div>
           </div>
@@ -353,8 +463,8 @@ export const AdminModal: React.FC<AdminModalProps> = ({
             <h4 className="text-2xl font-black text-white text-center mb-2">
               تسجيل دخول الإدارة
             </h4>
-            <p className="text-xs text-neutral-400 text-center mb-8">
-              أدخل اسم المستخدم وكلمة المرور للوصول إلى لوحة التحكم والتعديل على محتوى الموقع
+            <p className="text-xs text-neutral-400 text-center mb-6">
+              سجل دخولك لإدارة محتوى الصالة وحفظ كافة التعديلات مباشرة في قاعدة البيانات السحابية
             </p>
 
             {loginError && (
@@ -363,6 +473,28 @@ export const AdminModal: React.FC<AdminModalProps> = ({
                 <span>{loginError}</span>
               </div>
             )}
+
+            {/* Google One-Click Admin Sign-in Button */}
+            <button
+              type="button"
+              disabled={isLoggingIn}
+              onClick={handleGoogleLogin}
+              className="w-full py-3.5 px-4 bg-white hover:bg-neutral-100 active:scale-98 text-neutral-900 font-bold text-xs rounded-xl flex items-center justify-center gap-3 transition-all shadow-lg cursor-pointer mb-5 disabled:opacity-50"
+            >
+              <svg className="w-4 h-4" viewBox="0 0 24 24">
+                <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" />
+                <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" />
+                <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z" />
+                <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z" />
+              </svg>
+              <span>تسجيل الدخول السريع بحساب Google (المعتمد)</span>
+            </button>
+
+            <div className="w-full flex items-center gap-3 mb-5">
+              <div className="h-[1px] bg-neutral-800 flex-1"></div>
+              <span className="text-[11px] text-neutral-500 font-semibold">أو بكلمة المرور</span>
+              <div className="h-[1px] bg-neutral-800 flex-1"></div>
+            </div>
 
             <form onSubmit={handleLogin} className="w-full space-y-4">
               <div>
@@ -604,7 +736,7 @@ export const AdminModal: React.FC<AdminModalProps> = ({
                     </p>
                   </div>
 
-                  <div className="pt-2">
+                  <div className="pt-2 flex flex-wrap items-center gap-3">
                     <button
                       type="submit"
                       disabled={isSavingSettings}
@@ -613,6 +745,24 @@ export const AdminModal: React.FC<AdminModalProps> = ({
                       <Save className="w-4 h-4" />
                       <span>{isSavingSettings ? 'جاري الحفظ...' : 'حفظ التغييرات'}</span>
                     </button>
+
+                    <button
+                      type="button"
+                      onClick={handleSeedFirestore}
+                      disabled={isSeeding}
+                      className="flex items-center gap-2 px-4 py-3 bg-neutral-800 hover:bg-neutral-700 text-neutral-200 border border-neutral-700 font-bold text-xs rounded-xl transition-all cursor-pointer"
+                      title="مزامنة وتهيئة البيانات الأساسية في قاعدة البيانات السحابية"
+                    >
+                      <Cloud className="w-4 h-4 text-emerald-400" />
+                      <span>{isSeeding ? 'جاري تهيئة السحاب...' : 'مزامنة السحاب الأولية'}</span>
+                    </button>
+
+                    {seedSuccess && (
+                      <span className="text-xs text-emerald-400 flex items-center gap-1 font-semibold">
+                        <CheckCircle2 className="w-3.5 h-3.5" />
+                        <span>تمت مزامنة وتهيئة البيانات السحابية بنجاح!</span>
+                      </span>
+                    )}
                   </div>
                 </form>
               )}
@@ -622,10 +772,24 @@ export const AdminModal: React.FC<AdminModalProps> = ({
                 <div className="space-y-8">
                   {/* Add Photo Form */}
                   <div className="p-5 rounded-2xl bg-neutral-950 border border-neutral-800">
-                    <h4 className="text-sm font-bold text-white mb-3 flex items-center gap-2">
-                      <Plus className="w-4 h-4 text-red-500" />
-                      <span>إضافة صورة جديدة لصالة الجيم</span>
-                    </h4>
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-3">
+                      <h4 className="text-sm font-bold text-white flex items-center gap-2">
+                        <Plus className="w-4 h-4 text-red-500" />
+                        <span>إضافة صورة جديدة لصالة الجيم</span>
+                      </h4>
+
+                      <label className="inline-flex items-center gap-2 px-3.5 py-1.5 bg-neutral-900 hover:bg-neutral-800 text-neutral-200 text-xs font-bold rounded-xl cursor-pointer border border-neutral-700 transition-colors w-fit">
+                        <Upload className="w-3.5 h-3.5 text-red-500" />
+                        <span>{isUploadingPhoto ? 'جاري الرفع للتخزين السحابي...' : 'رفع صورة من جهازك'}</span>
+                        <input
+                          type="file"
+                          accept="image/*"
+                          className="hidden"
+                          disabled={isUploadingPhoto}
+                          onChange={handleUploadPhotoFile}
+                        />
+                      </label>
+                    </div>
 
                     {photoError && (
                       <p className="text-red-500 text-xs mb-3">{photoError}</p>
@@ -1217,7 +1381,7 @@ export const AdminModal: React.FC<AdminModalProps> = ({
                             )}
                           </div>
 
-                          <div>
+                          <div className="flex items-center gap-2">
                             <a
                               href={`https://wa.me/${lead.phoneNumber.replace(/[^0-9]/g, '')}`}
                               target="_blank"
@@ -1225,8 +1389,16 @@ export const AdminModal: React.FC<AdminModalProps> = ({
                               className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-bold"
                             >
                               <MessageSquare className="w-3.5 h-3.5" />
-                              <span>مراسلة عبر واتساب</span>
+                              <span>واتساب</span>
                             </a>
+                            <button
+                              type="button"
+                              onClick={() => handleDeleteLead(lead.id)}
+                              className="p-1.5 rounded-lg bg-red-950/40 hover:bg-red-900 text-red-400 hover:text-white border border-red-900/60 transition-colors"
+                              title="حذف الطلب"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
                           </div>
                         </div>
                       ))}

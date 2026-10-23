@@ -1,0 +1,145 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Default-deny catch-all (First Pillar & Global Safety Net)
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // Hardened Primitives
+    function isValidId(id) {
+      return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    // Bootstrapped Admin Verification (Pillar 4: Verified Email & Admin Check)
+    function isAdmin() {
+      return isSignedIn() &&
+        request.auth.token.email_verified == true &&
+        (request.auth.token.email == 'romeoroby45@gmail.com' ||
+         exists(/databases/$(database)/documents/admins/$(request.auth.uid)));
+    }
+
+    // Validation Blueprint for Gym Settings
+    function isValidSettings(data) {
+      return data.keys().hasAll(['gymName', 'gymTagline', 'whatsappNumber', 'locationUrl']) &&
+        data.gymName is string && data.gymName.size() > 0 && data.gymName.size() <= 100 &&
+        data.gymTagline is string && data.gymTagline.size() <= 150 &&
+        data.whatsappNumber is string && data.whatsappNumber.size() <= 30 &&
+        data.locationUrl is string && data.locationUrl.size() <= 300 &&
+        (!('welcomeTitle' in data) || (data.welcomeTitle is string && data.welcomeTitle.size() <= 100)) &&
+        (!('welcomeText' in data) || (data.welcomeText is string && data.welcomeText.size() <= 1000)) &&
+        (!('instagramUrl' in data) || (data.instagramUrl is string && data.instagramUrl.size() <= 300)) &&
+        (!('locationButtonText' in data) || (data.locationButtonText is string && data.locationButtonText.size() <= 100)) &&
+        (!('tickerText' in data) || (data.tickerText is string && data.tickerText.size() <= 1000)) &&
+        (!('logoUrl' in data) || (data.logoUrl is string && data.logoUrl.size() <= 500)) &&
+        (!('heroBadgeText' in data) || (data.heroBadgeText is string && data.heroBadgeText.size() <= 100)) &&
+        (!('ctaButtonText' in data) || (data.ctaButtonText is string && data.ctaButtonText.size() <= 100)) &&
+        (!('heroAnimatedBgUrl' in data) || (data.heroAnimatedBgUrl is string && data.heroAnimatedBgUrl.size() <= 500)) &&
+        (!('updatedAt' in data) || (data.updatedAt is string && data.updatedAt.size() <= 100));
+    }
+
+    // Validation Blueprint for Gym Photos
+    function isValidPhoto(data) {
+      return data.keys().hasAll(['id', 'url']) &&
+        data.id is string && isValidId(data.id) &&
+        data.url is string && data.url.size() > 0 && data.url.size() <= 1000 &&
+        (!('title' in data) || (data.title is string && data.title.size() <= 200)) &&
+        (!('createdAt' in data) || (data.createdAt is string && data.createdAt.size() <= 100));
+    }
+
+    // Validation Blueprint for Gym Reels
+    function isValidReel(data) {
+      return data.keys().hasAll(['id', 'url']) &&
+        data.id is string && isValidId(data.id) &&
+        data.url is string && data.url.size() > 0 && data.url.size() <= 1000 &&
+        (!('title' in data) || (data.title is string && data.title.size() <= 200)) &&
+        (!('createdAt' in data) || (data.createdAt is string && data.createdAt.size() <= 100));
+    }
+
+    // Validation Blueprint for Subscription Plans
+    function isValidPlan(data) {
+      return data.keys().hasAll(['id', 'duration', 'price', 'order']) &&
+        data.id is string && isValidId(data.id) &&
+        data.duration is string && data.duration.size() > 0 && data.duration.size() <= 100 &&
+        data.price is number && data.price >= 0 &&
+        data.order is number && data.order >= 0 &&
+        (!('currency' in data) || (data.currency is string && data.currency.size() <= 10)) &&
+        (!('badge' in data) || (data.badge is string && data.badge.size() <= 50)) &&
+        (!('isPopular' in data) || data.isPopular is bool) &&
+        (!('features' in data) || (data.features is list && data.features.size() <= 25));
+    }
+
+    // Validation Blueprint for Subscription Leads (Customer Form)
+    function isValidSubscription(data) {
+      return data.keys().hasAll(['id', 'fullName', 'phoneNumber']) &&
+        data.id is string && isValidId(data.id) &&
+        data.fullName is string && data.fullName.size() > 0 && data.fullName.size() <= 100 &&
+        data.phoneNumber is string && data.phoneNumber.size() > 0 && data.phoneNumber.size() <= 30 &&
+        (!('country' in data) || (data.country is string && data.country.size() <= 50)) &&
+        (!('countryCode' in data) || (data.countryCode is string && data.countryCode.size() <= 10)) &&
+        (!('subscriptionDuration' in data) || (data.subscriptionDuration is string && data.subscriptionDuration.size() <= 100)) &&
+        (!('price' in data) || (data.price is number && data.price >= 0)) &&
+        (!('paymentMethod' in data) || (data.paymentMethod is string && data.paymentMethod.size() <= 50)) &&
+        (!('createdAt' in data) || (data.createdAt is string && data.createdAt.size() <= 100));
+    }
+
+    // Settings Collection
+    match /settings/{settingId} {
+      allow get: if isValidId(settingId);
+      allow list: if true;
+      allow create: if isValidId(settingId) && isValidSettings(incoming()) && (isAdmin() || !exists(/databases/$(database)/documents/settings/$(settingId)));
+      allow update: if isValidId(settingId) && isAdmin() && isValidSettings(incoming());
+      allow delete: if isValidId(settingId) && isAdmin();
+    }
+
+    // Photos Collection
+    match /photos/{photoId} {
+      allow get: if isValidId(photoId);
+      allow list: if true;
+      allow create: if isValidId(photoId) && isValidPhoto(incoming()) && (isAdmin() || !exists(/databases/$(database)/documents/photos/$(photoId)));
+      allow update: if isValidId(photoId) && isAdmin() && isValidPhoto(incoming());
+      allow delete: if isValidId(photoId) && isAdmin();
+    }
+
+    // Reels Collection
+    match /reels/{reelId} {
+      allow get: if isValidId(reelId);
+      allow list: if true;
+      allow create: if isValidId(reelId) && isValidReel(incoming()) && (isAdmin() || !exists(/databases/$(database)/documents/reels/$(reelId)));
+      allow update: if isValidId(reelId) && isAdmin() && isValidReel(incoming());
+      allow delete: if isValidId(reelId) && isAdmin();
+    }
+
+    // Plans Collection
+    match /plans/{planId} {
+      allow get: if isValidId(planId);
+      allow list: if true;
+      allow create: if isValidId(planId) && isValidPlan(incoming()) && (isAdmin() || !exists(/databases/$(database)/documents/plans/$(planId)));
+      allow update: if isValidId(planId) && isAdmin() && isValidPlan(incoming());
+      allow delete: if isValidId(planId) && isAdmin();
+    }
+
+    // Customer Leads / Subscriptions Collection (PII Protected)
+    match /subscriptions/{subscriptionId} {
+      // Anyone can submit a subscription lead form
+      allow create: if isValidId(subscriptionId) && isValidSubscription(incoming());
+      // Only authorized admin can view customer leads or delete them
+      allow get, list, delete: if isAdmin();
+      allow update: if false;
+    }
+  }
+}

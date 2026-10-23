@@ -16,22 +16,9 @@ import { SubscriptionModal } from './components/SubscriptionModal';
 import { AdminModal } from './components/AdminModal';
 import { AppData, SubscriptionPlan, GymSettings } from './types';
 import { api } from './services/api';
+import { subscribeToGymData, seedFirestoreIfEmpty, INITIAL_SETTINGS } from './services/firebase';
 
-const DEFAULT_SETTINGS: GymSettings = {
-  gymName: 'PUMP CLUB',
-  gymTagline: 'WHERE STRENGTH MEETS GREATNESS',
-  welcomeTitle: 'PUMP CLUB',
-  welcomeText: 'Welcome to Pump Club. Unleash your maximum potential with world-class machinery, championship-level coaching, and an intense athletic atmosphere built for serious progress.',
-  whatsappNumber: '01113220002',
-  instagramUrl: 'https://www.instagram.com/pump_club_gym?stkn=MTdrZDdqZDRweTAzeA==',
-  locationUrl: 'https://share.google/XTKKfHqCEi3obSBsE',
-  locationButtonText: 'موقع الجيم 📍',
-  tickerText: '🔥 مرحباً بكم في PUMP CLUB • تدريب احترافي بأحدث الأجهزة • عروض واشتراكات حصرية لفترة محدودة • انضم لأبطال بامب كلوب الآن! • 01113220002',
-  logoUrl: 'https://i.postimg.cc/QNWQb6ND/1000254467-removebg-preview.png',
-  heroBadgeText: 'ELITE FITNESS & BODYBUILDING',
-  ctaButtonText: 'JOIN NOW / اشترك الآن',
-  heroAnimatedBgUrl: 'https://images.unsplash.com/photo-1534438327276-14e5300c3a48?q=80&w=1470&auto=format&fit=crop'
-};
+const DEFAULT_SETTINGS: GymSettings = INITIAL_SETTINGS;
 
 export default function App() {
   const [data, setData] = useState<AppData>({
@@ -64,7 +51,24 @@ export default function App() {
   };
 
   useEffect(() => {
-    loadData();
+    // 1. Initial seed attempt if database is completely new
+    seedFirestoreIfEmpty().catch(() => {});
+
+    // 2. Attach real-time cloud listener for instant cross-device updates
+    const unsubscribe = subscribeToGymData(
+      (freshData) => {
+        setData(freshData);
+        setIsLoading(false);
+      },
+      (err) => {
+        console.warn('Real-time sync error, falling back to initial fetch:', err);
+        loadData();
+      }
+    );
+
+    return () => {
+      unsubscribe();
+    };
   }, []);
 
   const handleOpenSubscribe = (plan?: SubscriptionPlan) => {

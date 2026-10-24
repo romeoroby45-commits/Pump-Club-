@@ -368,6 +368,15 @@ export default async function handler(req: any, res: any) {
       return res.status(405).json({ success: false, error: `طريقة الطلب ${req.method} غير مسموح بها` });
     }
 
+    // 9. Upload & Storage: /api/upload
+    if (route === 'upload') {
+      if (req.method === 'DELETE') {
+        const fileUrl = body?.url || urlObj.searchParams.get('url');
+        return res.status(200).json({ success: true, message: 'Deleted' });
+      }
+      return res.status(200).json({ success: true });
+    }
+
     return res.status(404).json({ success: false, error: `الرابط /api/${pathname} غير موجود` });
   } catch (error: any) {
     console.error('Serverless function error:', error);

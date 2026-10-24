@@ -2,6 +2,7 @@ import express, { Request, Response, NextFunction } from 'express';
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import multer from 'multer';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -10,7 +11,34 @@ const app = express();
 const PORT = parseInt(process.env.PORT || '3000', 10);
 const isProd = process.env.NODE_ENV === 'production';
 
-app.use(express.json({ limit: '10mb' }));
+// Uploads directory configuration for permanent media storage
+const UPLOADS_DIR = path.join(__dirname, 'uploads');
+if (!fs.existsSync(UPLOADS_DIR)) {
+  fs.mkdirSync(UPLOADS_DIR, { recursive: true });
+}
+
+const multerStorage = multer.diskStorage({
+  destination: (req, file, cb) => {
+    cb(null, UPLOADS_DIR);
+  },
+  filename: (req, file, cb) => {
+    const ext = path.extname(file.originalname).toLowerCase();
+    const cleanBase = path.basename(file.originalname, ext).replace(/[^a-zA-Z0-9_-]/g, '_');
+    const uniqueName = `${Date.now()}-${Math.random().toString(36).substring(2, 7)}-${cleanBase}${ext}`;
+    cb(null, uniqueName);
+  }
+});
+
+const upload = multer({
+  storage: multerStorage,
+  limits: { fileSize: 150 * 1024 * 1024 } // 150MB supports videos & high-res images
+});
+
+app.use(express.json({ limit: '50mb' }));
+app.use(express.urlencoded({ extended: true, limit: '50mb' }));
+
+// Serve uploaded permanent media files statically
+app.use('/uploads', express.static(UPLOADS_DIR));
 
 // Database file setup
 const DATA_DIR = path.join(__dirname, 'data');
@@ -232,6 +260,45 @@ app.put('/api/settings', (req: Request, res: Response) => {
   res.json({ success: true, settings: db.settings });
 });
 
+// File Upload Endpoint for Photos and Videos
+app.post('/api/upload', upload.single('file'), (req: Request, res: Response) => {
+  if (!req.file) {
+    return res.status(400).json({ success: false, error: 'لم يتم استلام أي ملف' });
+  }
+
+  const fileUrl = `/uploads/${req.file.filename}`;
+  res.json({
+    success: true,
+    url: fileUrl,
+    filename: req.file.filename,
+    originalName: req.file.originalname,
+    size: req.file.size,
+    mimeType: req.file.mimetype
+  });
+});
+
+app.delete('/api/upload', (req: Request, res: Response) => {
+  const targetUrl = (req.query?.url as string) || req.body?.url;
+  if (!targetUrl || typeof targetUrl !== 'string') {
+    return res.status(400).json({ success: false, error: 'رابط الملف مطلوب' });
+  }
+
+  if (targetUrl.startsWith('/uploads/')) {
+    const fileName = path.basename(targetUrl);
+    const filePath = path.join(UPLOADS_DIR, fileName);
+    if (fs.existsSync(filePath)) {
+      try {
+        fs.unlinkSync(filePath);
+        console.log('Deleted uploaded file from disk:', filePath);
+      } catch (err) {
+        console.warn('Could not delete upload file:', err);
+      }
+    }
+  }
+
+  res.json({ success: true });
+});
+
 // Photos Endpoints
 app.get('/api/photos', (req: Request, res: Response) => {
   const db = readDb();
@@ -272,6 +339,20 @@ app.put('/api/photos/:id', (req: Request, res: Response) => {
 app.delete('/api/photos/:id', (req: Request, res: Response) => {
   const { id } = req.params;
   const db = readDb();
+  const targetPhoto = db.photos.find(p => p.id === id);
+  if (targetPhoto && targetPhoto.url && targetPhoto.url.startsWith('/uploads/')) {
+    const fileName = path.basename(targetPhoto.url);
+    const filePath = path.join(UPLOADS_DIR, fileName);
+    if (fs.existsSync(filePath)) {
+      try {
+        fs.unlinkSync(filePath);
+        console.log('Permanently removed deleted photo file from disk:', filePath);
+      } catch (e) {
+        console.warn('Failed to remove file from disk:', e);
+      }
+    }
+  }
+
   db.photos = db.photos.filter(p => p.id !== id);
   writeDb(db);
   res.json({ success: true, photos: db.photos });
@@ -317,6 +398,20 @@ app.put('/api/reels/:id', (req: Request, res: Response) => {
 app.delete('/api/reels/:id', (req: Request, res: Response) => {
   const { id } = req.params;
   const db = readDb();
+  const targetReel = db.reels.find(r => r.id === id);
+  if (targetReel && targetReel.url && targetReel.url.startsWith('/uploads/')) {
+    const fileName = path.basename(targetReel.url);
+    const filePath = path.join(UPLOADS_DIR, fileName);
+    if (fs.existsSync(filePath)) {
+      try {
+        fs.unlinkSync(filePath);
+        console.log('Permanently removed deleted reel file from disk:', filePath);
+      } catch (e) {
+        console.warn('Failed to remove file from disk:', e);
+      }
+    }
+  }
+
   db.reels = db.reels.filter(r => r.id !== id);
   writeDb(db);
   res.json({ success: true, reels: db.reels });

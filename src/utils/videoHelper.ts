@@ -18,8 +18,11 @@ export function parseVideoUrl(url: string): VideoInfo {
     };
   }
 
-  // Direct video file or generic URL
-  if (/\.(mp4|webm|ogg|mov)($|\?)/i.test(trimmed)) {
+  // Direct video file or uploaded media path
+  if (
+    trimmed.startsWith('/uploads/') ||
+    /\.(mp4|webm|ogg|mov|m4v|mkv|3gp)($|\?)/i.test(trimmed)
+  ) {
     return {
       type: 'direct',
       directUrl: trimmed

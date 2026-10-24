@@ -3,7 +3,7 @@ import {
   X, Lock, ShieldCheck, Settings, Camera, Film, CreditCard,
   Plus, Trash2, Edit2, Check, ArrowUp, ArrowDown, ExternalLink,
   Save, RefreshCw, LogOut, MessageSquare, AlertCircle, Upload,
-  Cloud, CheckCircle2
+  Cloud, CheckCircle2, Play, Eye, FileVideo, ImageIcon, Loader2
 } from 'lucide-react';
 import { GymPhoto, GymReel, GymSettings, SubscriptionPlan } from '../types';
 import { api } from '../services/api';
@@ -57,22 +57,32 @@ export const AdminModal: React.FC<AdminModalProps> = ({
   const [isSeeding, setIsSeeding] = useState(false);
   const [seedSuccess, setSeedSuccess] = useState(false);
 
-  // Photo state
+  // Photo state & Direct Upload Preview
   const [newPhotoUrl, setNewPhotoUrl] = useState('');
   const [newPhotoTitle, setNewPhotoTitle] = useState('');
+  const [photoFile, setPhotoFile] = useState<File | null>(null);
+  const [photoPreviewUrl, setPhotoPreviewUrl] = useState<string | null>(null);
+  const [photoUploadProgress, setPhotoUploadProgress] = useState<number>(0);
+  const [isUploadingPhoto, setIsUploadingPhoto] = useState(false);
   const [editingPhotoId, setEditingPhotoId] = useState<string | null>(null);
   const [editPhotoUrl, setEditPhotoUrl] = useState('');
   const [editPhotoTitle, setEditPhotoTitle] = useState('');
   const [photoError, setPhotoError] = useState('');
-  const [isUploadingPhoto, setIsUploadingPhoto] = useState(false);
 
-  // Reel state
+  // Reel/Video state & Direct Upload Preview
   const [newReelUrl, setNewReelUrl] = useState('');
   const [newReelTitle, setNewReelTitle] = useState('');
+  const [reelFile, setReelFile] = useState<File | null>(null);
+  const [reelPreviewUrl, setReelPreviewUrl] = useState<string | null>(null);
+  const [reelUploadProgress, setReelUploadProgress] = useState<number>(0);
+  const [isUploadingReel, setIsUploadingReel] = useState(false);
   const [editingReelId, setEditingReelId] = useState<string | null>(null);
   const [editReelUrl, setEditReelUrl] = useState('');
   const [editReelTitle, setEditReelTitle] = useState('');
   const [reelError, setReelError] = useState('');
+
+  // Deletion operation state
+  const [deletingId, setDeletingId] = useState<string | null>(null);
 
   // Plan state
   const [editingPlanId, setEditingPlanId] = useState<string | null>(null);
@@ -180,24 +190,70 @@ export const AdminModal: React.FC<AdminModalProps> = ({
     } catch {}
   };
 
-  // Upload photo file to Firebase Storage
-  const handleUploadPhotoFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
+  // Photo file selection & instant preview
+  const handleSelectPhotoFile = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
     setPhotoError('');
-    setIsUploadingPhoto(true);
 
-    try {
-      const cloudUrl = await api.uploadFile(file);
-      setNewPhotoUrl(cloudUrl);
-      if (!newPhotoTitle) {
-        setNewPhotoTitle(file.name.replace(/\.[^/.]+$/, ''));
-      }
-    } catch (err: any) {
-      setPhotoError(err.message || 'فشل رفع الصورة إلى التخزين السحابي');
-    } finally {
-      setIsUploadingPhoto(false);
+    if (file.size > 50 * 1024 * 1024) {
+      setPhotoError('حجم الصورة كبير جداً (الحد الأقصى 50 ميجابايت)');
+      return;
     }
+
+    if (photoPreviewUrl && photoPreviewUrl.startsWith('blob:')) {
+      URL.revokeObjectURL(photoPreviewUrl);
+    }
+
+    const previewUrl = URL.createObjectURL(file);
+    setPhotoFile(file);
+    setPhotoPreviewUrl(previewUrl);
+    setPhotoUploadProgress(0);
+    if (!newPhotoTitle) {
+      setNewPhotoTitle(file.name.replace(/\.[^/.]+$/, ''));
+    }
+  };
+
+  const handleCancelPhotoPreview = () => {
+    if (photoPreviewUrl && photoPreviewUrl.startsWith('blob:')) {
+      URL.revokeObjectURL(photoPreviewUrl);
+    }
+    setPhotoFile(null);
+    setPhotoPreviewUrl(null);
+    setPhotoUploadProgress(0);
+  };
+
+  // Reel/Video file selection & instant preview
+  const handleSelectReelFile = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setReelError('');
+
+    if (file.size > 150 * 1024 * 1024) {
+      setReelError('حجم الفيديو كبير جداً (الحد الأقصى 150 ميجابايت)');
+      return;
+    }
+
+    if (reelPreviewUrl && reelPreviewUrl.startsWith('blob:')) {
+      URL.revokeObjectURL(reelPreviewUrl);
+    }
+
+    const previewUrl = URL.createObjectURL(file);
+    setReelFile(file);
+    setReelPreviewUrl(previewUrl);
+    setReelUploadProgress(0);
+    if (!newReelTitle) {
+      setNewReelTitle(file.name.replace(/\.[^/.]+$/, ''));
+    }
+  };
+
+  const handleCancelReelPreview = () => {
+    if (reelPreviewUrl && reelPreviewUrl.startsWith('blob:')) {
+      URL.revokeObjectURL(reelPreviewUrl);
+    }
+    setReelFile(null);
+    setReelPreviewUrl(null);
+    setReelUploadProgress(0);
   };
 
   // Seed default data to Firestore if empty
@@ -245,33 +301,47 @@ export const AdminModal: React.FC<AdminModalProps> = ({
     }
   };
 
-  // Add Photo
+  // Add Photo (From file upload OR direct URL)
   const handleAddPhoto = async (e: React.FormEvent) => {
     e.preventDefault();
     setPhotoError('');
-    if (!newPhotoUrl.trim()) {
-      setPhotoError('يرجى إدخال رابط الصورة');
+
+    if (!photoFile && !newPhotoUrl.trim()) {
+      setPhotoError('يرجى اختيار صورة من جهازك أو إدخال رابط الصورة');
       return;
     }
 
+    setIsUploadingPhoto(true);
     try {
-      await api.addPhoto({ url: newPhotoUrl.trim(), title: newPhotoTitle.trim() });
+      let finalUrl = newPhotoUrl.trim();
+      if (photoFile) {
+        finalUrl = await api.uploadFile(photoFile, (pct) => setPhotoUploadProgress(pct));
+      }
+
+      await api.addPhoto({ url: finalUrl, title: newPhotoTitle.trim() });
+      handleCancelPhotoPreview();
       setNewPhotoUrl('');
       setNewPhotoTitle('');
       onDataUpdated();
     } catch (err: any) {
       setPhotoError(err.message || 'فشل إضافة الصورة');
+    } finally {
+      setIsUploadingPhoto(false);
+      setPhotoUploadProgress(0);
     }
   };
 
-  // Delete Photo
+  // Delete Photo permanently from Firestore and storage
   const handleDeletePhoto = async (id: string) => {
-    if (!window.confirm('هل أنت متأكد من حذف هذه الصورة؟')) return;
+    if (!window.confirm('هل أنت متأكد من حذف هذه الصورة نهائياً من الموقع والخادم؟')) return;
+    setDeletingId(id);
     try {
       await api.deletePhoto(id);
       onDataUpdated();
     } catch (err: any) {
       alert(err.message || 'فشل حذف الصورة');
+    } finally {
+      setDeletingId(null);
     }
   };
 
@@ -286,33 +356,47 @@ export const AdminModal: React.FC<AdminModalProps> = ({
     }
   };
 
-  // Add Reel
+  // Add Reel (From file upload OR direct/YouTube URL)
   const handleAddReel = async (e: React.FormEvent) => {
     e.preventDefault();
     setReelError('');
-    if (!newReelUrl.trim()) {
-      setReelError('يرجى إدخال رابط الفيديو');
+
+    if (!reelFile && !newReelUrl.trim()) {
+      setReelError('يرجى اختيار فيديو من جهازك أو إدخال رابط الفيديو');
       return;
     }
 
+    setIsUploadingReel(true);
     try {
-      await api.addReel({ url: newReelUrl.trim(), title: newReelTitle.trim() });
+      let finalUrl = newReelUrl.trim();
+      if (reelFile) {
+        finalUrl = await api.uploadFile(reelFile, (pct) => setReelUploadProgress(pct));
+      }
+
+      await api.addReel({ url: finalUrl, title: newReelTitle.trim() });
+      handleCancelReelPreview();
       setNewReelUrl('');
       setNewReelTitle('');
       onDataUpdated();
     } catch (err: any) {
       setReelError(err.message || 'فشل إضافة الفيديو');
+    } finally {
+      setIsUploadingReel(false);
+      setReelUploadProgress(0);
     }
   };
 
-  // Delete Reel
+  // Delete Reel permanently from Firestore and storage
   const handleDeleteReel = async (id: string) => {
-    if (!window.confirm('هل أنت متأكد من حذف هذا الفيديو؟')) return;
+    if (!window.confirm('هل أنت متأكد من حذف هذا الفيديو نهائياً من الموقع والخادم؟')) return;
+    setDeletingId(id);
     try {
       await api.deleteReel(id);
       onDataUpdated();
     } catch (err: any) {
       alert(err.message || 'فشل حذف الفيديو');
+    } finally {
+      setDeletingId(null);
     }
   };
 
@@ -770,89 +854,166 @@ export const AdminModal: React.FC<AdminModalProps> = ({
               {/* 2. PHOTOS MANAGEMENT */}
               {activeTab === 'photos' && (
                 <div className="space-y-8">
-                  {/* Add Photo Form */}
+                  {/* Add Photo Form & Direct Device Upload */}
                   <div className="p-5 rounded-2xl bg-neutral-950 border border-neutral-800">
-                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-3">
-                      <h4 className="text-sm font-bold text-white flex items-center gap-2">
-                        <Plus className="w-4 h-4 text-red-500" />
-                        <span>إضافة صورة جديدة لصالة الجيم</span>
-                      </h4>
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4">
+                      <div>
+                        <h4 className="text-sm font-bold text-white flex items-center gap-2">
+                          <ImageIcon className="w-4 h-4 text-red-500" />
+                          <span>إضافة صورة جديدة لصالة الجيم</span>
+                        </h4>
+                        <p className="text-xs text-neutral-400 mt-0.5">
+                          يمكنك اختيار الصورة مباشرة من معرض هاتفك أو حاسوبك، أو إدخال رابط خارجي
+                        </p>
+                      </div>
 
-                      <label className="inline-flex items-center gap-2 px-3.5 py-1.5 bg-neutral-900 hover:bg-neutral-800 text-neutral-200 text-xs font-bold rounded-xl cursor-pointer border border-neutral-700 transition-colors w-fit">
-                        <Upload className="w-3.5 h-3.5 text-red-500" />
-                        <span>{isUploadingPhoto ? 'جاري الرفع للتخزين السحابي...' : 'رفع صورة من جهازك'}</span>
+                      {/* Direct Upload Button */}
+                      <label className="inline-flex items-center justify-center gap-2 px-4 py-2 bg-red-600/10 hover:bg-red-600/20 text-red-400 border border-red-500/30 text-xs font-bold rounded-xl cursor-pointer transition-colors w-full sm:w-fit">
+                        <Upload className="w-4 h-4" />
+                        <span>اختيار صورة من الموبايل أو الكمبيوتر</span>
                         <input
                           type="file"
-                          accept="image/*"
+                          accept="image/*,.png,.jpg,.jpeg,.webp,.gif,.svg,.heic"
                           className="hidden"
                           disabled={isUploadingPhoto}
-                          onChange={handleUploadPhotoFile}
+                          onChange={handleSelectPhotoFile}
                         />
                       </label>
                     </div>
 
                     {photoError && (
-                      <p className="text-red-500 text-xs mb-3">{photoError}</p>
+                      <div className="p-3 mb-3 bg-red-950/40 border border-red-800/60 rounded-xl text-xs text-red-400 flex items-center gap-2">
+                        <AlertCircle className="w-4 h-4 shrink-0" />
+                        <span>{photoError}</span>
+                      </div>
                     )}
 
-                    <form onSubmit={handleAddPhoto} className="grid grid-cols-1 sm:grid-cols-12 gap-3">
-                      <div className="sm:col-span-7">
-                        <input
-                          type="url"
-                          required
-                          placeholder="رابط الصورة المباشر (Direct Image URL)"
-                          value={newPhotoUrl}
-                          onChange={(e) => setNewPhotoUrl(e.target.value)}
-                          className="w-full px-3.5 py-2.5 bg-neutral-900 border border-neutral-800 rounded-xl text-white text-xs focus:border-red-600 focus:outline-none font-mono"
-                          dir="ltr"
-                        />
+                    {/* Preview Area for Selected File */}
+                    {photoPreviewUrl && (
+                      <div className="mb-4 p-3 bg-neutral-900 border border-neutral-800 rounded-xl flex flex-col sm:flex-row items-center gap-4">
+                        <div className="relative w-32 h-24 shrink-0 rounded-lg overflow-hidden bg-black border border-neutral-700">
+                          <img
+                            src={photoPreviewUrl}
+                            alt="معاينة الصورة"
+                            className="w-full h-full object-cover"
+                          />
+                        </div>
+                        <div className="flex-1 w-full space-y-1 text-center sm:text-right">
+                          <div className="flex items-center justify-between">
+                            <span className="text-xs font-bold text-white flex items-center gap-1.5">
+                              <Eye className="w-3.5 h-3.5 text-emerald-400" />
+                              <span>معاينة الصورة المختارة قبل الحفظ</span>
+                            </span>
+                            <button
+                              type="button"
+                              onClick={handleCancelPhotoPreview}
+                              disabled={isUploadingPhoto}
+                              className="text-xs text-red-400 hover:text-red-300 underline cursor-pointer"
+                            >
+                              إلغاء المعاينة
+                            </button>
+                          </div>
+                          {photoFile && (
+                            <p className="text-[11px] text-neutral-400 font-mono">
+                              {photoFile.name} • {(photoFile.size / (1024 * 1024)).toFixed(2)} MB
+                            </p>
+                          )}
+                          {isUploadingPhoto && (
+                            <div className="w-full pt-1 space-y-1">
+                              <div className="w-full bg-neutral-800 h-2 rounded-full overflow-hidden">
+                                <div
+                                  className="bg-red-600 h-full transition-all duration-300"
+                                  style={{ width: `${photoUploadProgress}%` }}
+                                />
+                              </div>
+                              <p className="text-[10px] text-red-400 font-mono text-left" dir="ltr">
+                                جاري الرفع والحفظ: {photoUploadProgress}%
+                              </p>
+                            </div>
+                          )}
+                        </div>
                       </div>
-                      <div className="sm:col-span-3">
-                        <input
-                          type="text"
-                          placeholder="عنوان أو وصف الصورة"
-                          value={newPhotoTitle}
-                          onChange={(e) => setNewPhotoTitle(e.target.value)}
-                          className="w-full px-3.5 py-2.5 bg-neutral-900 border border-neutral-800 rounded-xl text-white text-xs focus:border-red-600 focus:outline-none"
-                        />
-                      </div>
-                      <div className="sm:col-span-2">
-                        <button
-                          type="submit"
-                          className="w-full py-2.5 bg-red-600 hover:bg-red-700 text-white font-bold text-xs rounded-xl transition-colors flex items-center justify-center gap-1.5 cursor-pointer"
-                        >
-                          <Plus className="w-4 h-4" />
-                          <span>إضافة</span>
-                        </button>
+                    )}
+
+                    <form onSubmit={handleAddPhoto} className="space-y-3">
+                      <div className="grid grid-cols-1 sm:grid-cols-12 gap-3">
+                        <div className="sm:col-span-7">
+                          <input
+                            type="url"
+                            placeholder="أو اكتب رابط مباشر للصورة (اختياري إذا قمت باختيار ملف أعلاه)"
+                            value={newPhotoUrl}
+                            onChange={(e) => {
+                              setNewPhotoUrl(e.target.value);
+                              if (e.target.value && photoFile) {
+                                handleCancelPhotoPreview();
+                              }
+                            }}
+                            disabled={isUploadingPhoto || !!photoFile}
+                            className="w-full px-3.5 py-2.5 bg-neutral-900 border border-neutral-800 rounded-xl text-white text-xs focus:border-red-600 focus:outline-none font-mono disabled:opacity-50"
+                            dir="ltr"
+                          />
+                        </div>
+                        <div className="sm:col-span-3">
+                          <input
+                            type="text"
+                            placeholder="عنوان أو وصف الصورة"
+                            value={newPhotoTitle}
+                            onChange={(e) => setNewPhotoTitle(e.target.value)}
+                            disabled={isUploadingPhoto}
+                            className="w-full px-3.5 py-2.5 bg-neutral-900 border border-neutral-800 rounded-xl text-white text-xs focus:border-red-600 focus:outline-none"
+                          />
+                        </div>
+                        <div className="sm:col-span-2">
+                          <button
+                            type="submit"
+                            disabled={isUploadingPhoto || (!photoFile && !newPhotoUrl.trim())}
+                            className="w-full py-2.5 bg-red-600 hover:bg-red-700 disabled:opacity-50 text-white font-bold text-xs rounded-xl transition-colors flex items-center justify-center gap-1.5 cursor-pointer shadow-md"
+                          >
+                            {isUploadingPhoto ? (
+                              <>
+                                <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                                <span>جاري الحفظ...</span>
+                              </>
+                            ) : (
+                              <>
+                                <Plus className="w-4 h-4" />
+                                <span>{photoFile ? 'رفع وحفظ' : 'إضافة'}</span>
+                              </>
+                            )}
+                          </button>
+                        </div>
                       </div>
                     </form>
                   </div>
 
                   {/* Photos List */}
                   <div>
-                    <h4 className="text-sm font-bold text-white mb-4">
-                      الصور الحالية ({photos.length})
+                    <h4 className="text-sm font-bold text-white mb-4 flex items-center gap-2">
+                      <Camera className="w-4 h-4 text-neutral-400" />
+                      <span>الصور الحالية ({photos.length})</span>
                     </h4>
 
                     {photos.length === 0 ? (
                       <div className="p-8 text-center bg-neutral-950/60 rounded-xl border border-neutral-800 text-neutral-400 text-xs">
-                        لا توجد صور مضافة بعد. أضف روابط الصور الخاصة بصالة PUMP CLUB أعلاه لتظهر فوراً لزوار الموقع.
+                        لا توجد صور مضافة بعد. ارفع صور الجيم من هاتفك أو حاسوبك أعلاه لتظهر فوراً لزوار الموقع في معرض الصور.
                       </div>
                     ) : (
                       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
                         {photos.map((p) => {
                           const isEditing = editingPhotoId === p.id;
+                          const isDeleting = deletingId === p.id;
                           return (
                             <div
                               key={p.id}
-                              className="rounded-xl overflow-hidden bg-neutral-950 border border-neutral-800 flex flex-col"
+                              className="rounded-xl overflow-hidden bg-neutral-950 border border-neutral-800 flex flex-col group transition-all"
                             >
-                              <div className="relative aspect-[4/3] bg-neutral-900">
+                              <div className="relative aspect-[4/3] bg-neutral-900 overflow-hidden">
                                 <img
                                   src={p.url}
                                   alt={p.title}
-                                  className="w-full h-full object-cover"
+                                  className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-105"
                                   referrerPolicy="no-referrer"
+                                  loading="lazy"
                                 />
                               </div>
 
@@ -878,14 +1039,14 @@ export const AdminModal: React.FC<AdminModalProps> = ({
                                       <button
                                         type="button"
                                         onClick={() => handleUpdatePhoto(p.id)}
-                                        className="px-2 py-1 bg-emerald-600 text-white text-xs rounded hover:bg-emerald-700"
+                                        className="px-2 py-1 bg-emerald-600 text-white text-xs rounded hover:bg-emerald-700 cursor-pointer"
                                       >
                                         حفظ
                                       </button>
                                       <button
                                         type="button"
                                         onClick={() => setEditingPhotoId(null)}
-                                        className="px-2 py-1 bg-neutral-800 text-neutral-300 text-xs rounded hover:bg-neutral-700"
+                                        className="px-2 py-1 bg-neutral-800 text-neutral-300 text-xs rounded hover:bg-neutral-700 cursor-pointer"
                                       >
                                         إلغاء
                                       </button>
@@ -904,7 +1065,7 @@ export const AdminModal: React.FC<AdminModalProps> = ({
                                           setEditPhotoTitle(p.title);
                                           setEditPhotoUrl(p.url);
                                         }}
-                                        className="p-1.5 text-neutral-400 hover:text-white rounded hover:bg-neutral-900 text-xs flex items-center gap-1"
+                                        className="p-1.5 text-neutral-400 hover:text-white rounded hover:bg-neutral-900 text-xs flex items-center gap-1 cursor-pointer"
                                       >
                                         <Edit2 className="w-3.5 h-3.5" />
                                         <span>تعديل</span>
@@ -912,11 +1073,21 @@ export const AdminModal: React.FC<AdminModalProps> = ({
 
                                       <button
                                         type="button"
+                                        disabled={isDeleting}
                                         onClick={() => handleDeletePhoto(p.id)}
-                                        className="p-1.5 text-red-400 hover:text-red-300 rounded hover:bg-red-950/40 text-xs flex items-center gap-1"
+                                        className="p-1.5 text-red-400 hover:text-red-300 disabled:opacity-50 rounded hover:bg-red-950/40 text-xs flex items-center gap-1 cursor-pointer transition-colors"
                                       >
-                                        <Trash2 className="w-3.5 h-3.5" />
-                                        <span>حذف</span>
+                                        {isDeleting ? (
+                                          <>
+                                            <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                                            <span>جاري الحذف...</span>
+                                          </>
+                                        ) : (
+                                          <>
+                                            <Trash2 className="w-3.5 h-3.5" />
+                                            <span>حذف نهائي</span>
+                                          </>
+                                        )}
                                       </button>
                                     </div>
                                   </>
@@ -931,73 +1102,196 @@ export const AdminModal: React.FC<AdminModalProps> = ({
                 </div>
               )}
 
-              {/* 3. REELS MANAGEMENT */}
+              {/* 3. REELS / VIDEO MANAGEMENT */}
               {activeTab === 'reels' && (
                 <div className="space-y-8">
-                  {/* Add Reel Form */}
+                  {/* Add Reel Form & Direct Device Upload */}
                   <div className="p-5 rounded-2xl bg-neutral-950 border border-neutral-800">
-                    <h4 className="text-sm font-bold text-white mb-3 flex items-center gap-2">
-                      <Plus className="w-4 h-4 text-red-500" />
-                      <span>إضافة مقطع فيديو أو ريل جديد</span>
-                    </h4>
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4">
+                      <div>
+                        <h4 className="text-sm font-bold text-white flex items-center gap-2">
+                          <FileVideo className="w-4 h-4 text-red-500" />
+                          <span>إضافة مقطع فيديو أو ريل جديد</span>
+                        </h4>
+                        <p className="text-xs text-neutral-400 mt-0.5">
+                          اختر ملف فيديو مباشرة من هاتفك أو جهازك (MP4 / WebM / MOV)، أو الصق رابط YouTube / Shorts
+                        </p>
+                      </div>
+
+                      {/* Direct Upload Button */}
+                      <label className="inline-flex items-center justify-center gap-2 px-4 py-2 bg-red-600/10 hover:bg-red-600/20 text-red-400 border border-red-500/30 text-xs font-bold rounded-xl cursor-pointer transition-colors w-full sm:w-fit">
+                        <Upload className="w-4 h-4" />
+                        <span>اختيار فيديو من الموبايل أو الكمبيوتر</span>
+                        <input
+                          type="file"
+                          accept="video/*,video/mp4,video/webm,video/quicktime,video/x-m4v,.mp4,.webm,.mov,.m4v,.mkv,.3gp"
+                          className="hidden"
+                          disabled={isUploadingReel}
+                          onChange={handleSelectReelFile}
+                        />
+                      </label>
+                    </div>
 
                     {reelError && (
-                      <p className="text-red-500 text-xs mb-3">{reelError}</p>
+                      <div className="p-3 mb-3 bg-red-950/40 border border-red-800/60 rounded-xl text-xs text-red-400 flex items-center gap-2">
+                        <AlertCircle className="w-4 h-4 shrink-0" />
+                        <span>{reelError}</span>
+                      </div>
                     )}
 
-                    <form onSubmit={handleAddReel} className="grid grid-cols-1 sm:grid-cols-12 gap-3">
-                      <div className="sm:col-span-7">
-                        <input
-                          type="url"
-                          required
-                          placeholder="رابط الفيديو (YouTube Shorts / YouTube / رابط MP4 مباشر)"
-                          value={newReelUrl}
-                          onChange={(e) => setNewReelUrl(e.target.value)}
-                          className="w-full px-3.5 py-2.5 bg-neutral-900 border border-neutral-800 rounded-xl text-white text-xs focus:border-red-600 focus:outline-none font-mono"
-                          dir="ltr"
-                        />
+                    {/* Interactive Preview for Uploaded File Video */}
+                    {reelPreviewUrl && (
+                      <div className="mb-4 p-3 bg-neutral-900 border border-neutral-800 rounded-xl space-y-3">
+                        <div className="flex items-center justify-between">
+                          <span className="text-xs font-bold text-white flex items-center gap-1.5">
+                            <Play className="w-3.5 h-3.5 text-emerald-400" />
+                            <span>معاينة مشغل الفيديو المختار قبل الحفظ</span>
+                          </span>
+                          <button
+                            type="button"
+                            onClick={handleCancelReelPreview}
+                            disabled={isUploadingReel}
+                            className="text-xs text-red-400 hover:text-red-300 underline cursor-pointer"
+                          >
+                            إلغاء المعاينة
+                          </button>
+                        </div>
+
+                        <div className="aspect-video max-h-56 bg-black rounded-xl overflow-hidden flex items-center justify-center border border-neutral-700">
+                          <video
+                            src={reelPreviewUrl}
+                            controls
+                            playsInline
+                            className="w-full h-full object-contain"
+                          />
+                        </div>
+
+                        {reelFile && (
+                          <p className="text-[11px] text-neutral-400 font-mono text-center sm:text-right">
+                            {reelFile.name} • {(reelFile.size / (1024 * 1024)).toFixed(2)} MB
+                          </p>
+                        )}
+
+                        {isUploadingReel && (
+                          <div className="w-full pt-1 space-y-1">
+                            <div className="w-full bg-neutral-800 h-2 rounded-full overflow-hidden">
+                              <div
+                                className="bg-red-600 h-full transition-all duration-300"
+                                style={{ width: `${reelUploadProgress}%` }}
+                              />
+                            </div>
+                            <p className="text-[10px] text-red-400 font-mono text-left" dir="ltr">
+                              جاري رفع وحفظ الفيديو: {reelUploadProgress}%
+                            </p>
+                          </div>
+                        )}
                       </div>
-                      <div className="sm:col-span-3">
-                        <input
-                          type="text"
-                          placeholder="عنوان المقطع (اختياري)"
-                          value={newReelTitle}
-                          onChange={(e) => setNewReelTitle(e.target.value)}
-                          className="w-full px-3.5 py-2.5 bg-neutral-900 border border-neutral-800 rounded-xl text-white text-xs focus:border-red-600 focus:outline-none"
-                        />
+                    )}
+
+                    {/* Preview for URL if provided */}
+                    {!reelPreviewUrl && newReelUrl.trim() && (
+                      <div className="mb-4 p-3 bg-neutral-900 border border-neutral-800 rounded-xl space-y-2">
+                        <span className="text-xs font-bold text-white flex items-center gap-1.5">
+                          <Eye className="w-3.5 h-3.5 text-blue-400" />
+                          <span>معاينة الرابط المدخل</span>
+                        </span>
+                        {(() => {
+                          const vInfo = parseVideoUrl(newReelUrl.trim());
+                          return (
+                            <div className="aspect-video max-h-48 bg-black rounded-xl overflow-hidden flex items-center justify-center border border-neutral-700">
+                              {vInfo.type === 'youtube' && vInfo.embedUrl ? (
+                                <iframe
+                                  src={vInfo.embedUrl}
+                                  title="YouTube preview"
+                                  className="w-full h-full border-0"
+                                />
+                              ) : (
+                                <video
+                                  src={newReelUrl.trim()}
+                                  controls
+                                  playsInline
+                                  className="w-full h-full object-contain"
+                                />
+                              )}
+                            </div>
+                          );
+                        })()}
                       </div>
-                      <div className="sm:col-span-2">
-                        <button
-                          type="submit"
-                          className="w-full py-2.5 bg-red-600 hover:bg-red-700 text-white font-bold text-xs rounded-xl transition-colors flex items-center justify-center gap-1.5 cursor-pointer"
-                        >
-                          <Plus className="w-4 h-4" />
-                          <span>إضافة</span>
-                        </button>
+                    )}
+
+                    <form onSubmit={handleAddReel} className="space-y-3">
+                      <div className="grid grid-cols-1 sm:grid-cols-12 gap-3">
+                        <div className="sm:col-span-7">
+                          <input
+                            type="url"
+                            placeholder="أو اكتب رابط فيديو (YouTube Shorts / YouTube / رابط MP4 مباشر)"
+                            value={newReelUrl}
+                            onChange={(e) => {
+                              setNewReelUrl(e.target.value);
+                              if (e.target.value && reelFile) {
+                                handleCancelReelPreview();
+                              }
+                            }}
+                            disabled={isUploadingReel || !!reelFile}
+                            className="w-full px-3.5 py-2.5 bg-neutral-900 border border-neutral-800 rounded-xl text-white text-xs focus:border-red-600 focus:outline-none font-mono disabled:opacity-50"
+                            dir="ltr"
+                          />
+                        </div>
+                        <div className="sm:col-span-3">
+                          <input
+                            type="text"
+                            placeholder="عنوان المقطع (اختياري)"
+                            value={newReelTitle}
+                            onChange={(e) => setNewReelTitle(e.target.value)}
+                            disabled={isUploadingReel}
+                            className="w-full px-3.5 py-2.5 bg-neutral-900 border border-neutral-800 rounded-xl text-white text-xs focus:border-red-600 focus:outline-none"
+                          />
+                        </div>
+                        <div className="sm:col-span-2">
+                          <button
+                            type="submit"
+                            disabled={isUploadingReel || (!reelFile && !newReelUrl.trim())}
+                            className="w-full py-2.5 bg-red-600 hover:bg-red-700 disabled:opacity-50 text-white font-bold text-xs rounded-xl transition-colors flex items-center justify-center gap-1.5 cursor-pointer shadow-md"
+                          >
+                            {isUploadingReel ? (
+                              <>
+                                <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                                <span>جاري الرفع...</span>
+                              </>
+                            ) : (
+                              <>
+                                <Plus className="w-4 h-4" />
+                                <span>{reelFile ? 'رفع وحفظ' : 'إضافة'}</span>
+                              </>
+                            )}
+                          </button>
+                        </div>
                       </div>
                     </form>
                   </div>
 
                   {/* Reels List */}
                   <div>
-                    <h4 className="text-sm font-bold text-white mb-4">
-                      المقاطع الحالية ({reels.length})
+                    <h4 className="text-sm font-bold text-white mb-4 flex items-center gap-2">
+                      <Film className="w-4 h-4 text-neutral-400" />
+                      <span>المقاطع الحالية ({reels.length})</span>
                     </h4>
 
                     {reels.length === 0 ? (
                       <div className="p-8 text-center bg-neutral-950/60 rounded-xl border border-neutral-800 text-neutral-400 text-xs">
-                        لا توجد مقاطع مضافة بعد. أضف روابط مقاطع الفيديو أو ريلز النادي أعلاه لتظهر في قسم الفيديوهات.
+                        لا توجد مقاطع مضافة بعد. ارفع فيديوهات تدريبات وأبطال الجيم أعلاه لتظهر في قسم الفيديوهات والريلز.
                       </div>
                     ) : (
                       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
                         {reels.map((r) => {
                           const isEditing = editingReelId === r.id;
+                          const isDeleting = deletingId === r.id;
                           const videoInfo = parseVideoUrl(r.url);
 
                           return (
                             <div
                               key={r.id}
-                              className="rounded-xl overflow-hidden bg-neutral-950 border border-neutral-800 flex flex-col"
+                              className="rounded-xl overflow-hidden bg-neutral-950 border border-neutral-800 flex flex-col group transition-all"
                             >
                               <div className="aspect-[9/12] bg-black flex items-center justify-center overflow-hidden">
                                 {videoInfo.type === 'youtube' && videoInfo.embedUrl ? (
@@ -1010,6 +1304,7 @@ export const AdminModal: React.FC<AdminModalProps> = ({
                                   <video
                                     src={videoInfo.directUrl}
                                     controls
+                                    playsInline
                                     className="w-full h-full object-cover"
                                   />
                                 ) : (
@@ -1041,14 +1336,14 @@ export const AdminModal: React.FC<AdminModalProps> = ({
                                       <button
                                         type="button"
                                         onClick={() => handleUpdateReel(r.id)}
-                                        className="px-2 py-1 bg-emerald-600 text-white text-xs rounded hover:bg-emerald-700"
+                                        className="px-2 py-1 bg-emerald-600 text-white text-xs rounded hover:bg-emerald-700 cursor-pointer"
                                       >
                                         حفظ
                                       </button>
                                       <button
                                         type="button"
                                         onClick={() => setEditingReelId(null)}
-                                        className="px-2 py-1 bg-neutral-800 text-neutral-300 text-xs rounded hover:bg-neutral-700"
+                                        className="px-2 py-1 bg-neutral-800 text-neutral-300 text-xs rounded hover:bg-neutral-700 cursor-pointer"
                                       >
                                         إلغاء
                                       </button>
@@ -1067,7 +1362,7 @@ export const AdminModal: React.FC<AdminModalProps> = ({
                                           setEditReelTitle(r.title);
                                           setEditReelUrl(r.url);
                                         }}
-                                        className="p-1.5 text-neutral-400 hover:text-white rounded hover:bg-neutral-900 text-xs flex items-center gap-1"
+                                        className="p-1.5 text-neutral-400 hover:text-white rounded hover:bg-neutral-900 text-xs flex items-center gap-1 cursor-pointer"
                                       >
                                         <Edit2 className="w-3.5 h-3.5" />
                                         <span>تعديل</span>
@@ -1075,11 +1370,21 @@ export const AdminModal: React.FC<AdminModalProps> = ({
 
                                       <button
                                         type="button"
+                                        disabled={isDeleting}
                                         onClick={() => handleDeleteReel(r.id)}
-                                        className="p-1.5 text-red-400 hover:text-red-300 rounded hover:bg-red-950/40 text-xs flex items-center gap-1"
+                                        className="p-1.5 text-red-400 hover:text-red-300 disabled:opacity-50 rounded hover:bg-red-950/40 text-xs flex items-center gap-1 cursor-pointer transition-colors"
                                       >
-                                        <Trash2 className="w-3.5 h-3.5" />
-                                        <span>حذف</span>
+                                        {isDeleting ? (
+                                          <>
+                                            <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                                            <span>جاري الحذف...</span>
+                                          </>
+                                        ) : (
+                                          <>
+                                            <Trash2 className="w-3.5 h-3.5" />
+                                            <span>حذف نهائي</span>
+                                          </>
+                                        )}
                                       </button>
                                     </div>
                                   </>

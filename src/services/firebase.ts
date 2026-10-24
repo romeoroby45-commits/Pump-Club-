@@ -294,17 +294,15 @@ export function subscribeToGymData(
     }
   );
 
-  // 3. Photos listener
+  // 3. Photos listener (updates in real time on add, edit, or delete)
   const unsubPhotos = onSnapshot(
     collection(db, 'photos'),
     (snapshot) => {
-      if (!snapshot.empty) {
-        const loaded: GymPhoto[] = [];
-        snapshot.forEach((d) => {
-          loaded.push({ id: d.id, ...(d.data() as Omit<GymPhoto, 'id'>) });
-        });
-        currentPhotos = loaded;
-      }
+      const loaded: GymPhoto[] = [];
+      snapshot.forEach((d) => {
+        loaded.push({ id: d.id, ...(d.data() as Omit<GymPhoto, 'id'>) });
+      });
+      currentPhotos = loaded;
       emit();
     },
     (err) => {
@@ -313,17 +311,15 @@ export function subscribeToGymData(
     }
   );
 
-  // 4. Reels listener
+  // 4. Reels listener (updates in real time on add, edit, or delete)
   const unsubReels = onSnapshot(
     collection(db, 'reels'),
     (snapshot) => {
-      if (!snapshot.empty) {
-        const loaded: GymReel[] = [];
-        snapshot.forEach((d) => {
-          loaded.push({ id: d.id, ...(d.data() as Omit<GymReel, 'id'>) });
-        });
-        currentReels = loaded;
-      }
+      const loaded: GymReel[] = [];
+      snapshot.forEach((d) => {
+        loaded.push({ id: d.id, ...(d.data() as Omit<GymReel, 'id'>) });
+      });
+      currentReels = loaded;
       emit();
     },
     (err) => {
@@ -410,7 +406,26 @@ export async function updateCloudPhoto(id: string, updates: { url?: string; titl
 export async function deleteCloudPhoto(id: string): Promise<void> {
   const path = `photos/${id}`;
   try {
+    let targetUrl = '';
+    try {
+      const snap = await getDoc(doc(db, 'photos', id));
+      if (snap.exists()) {
+        targetUrl = snap.data()?.url || '';
+      }
+    } catch (e) {
+      console.warn('Could not read photo before delete:', e);
+    }
+
+    // 1. Delete from Cloud Firestore
     await deleteDoc(doc(db, 'photos', id));
+
+    // 2. Delete physical file from permanent storage if uploaded file
+    if (targetUrl && targetUrl.startsWith('/uploads/')) {
+      fetch(`/api/upload?url=${encodeURIComponent(targetUrl)}`, { method: 'DELETE' }).catch(() => {});
+    }
+
+    // 3. Sync with local server
+    fetch(`/api/photos/${encodeURIComponent(id)}`, { method: 'DELETE' }).catch(() => {});
   } catch (error) {
     handleFirestoreError(error, OperationType.DELETE, path);
   }
@@ -450,7 +465,26 @@ export async function updateCloudReel(id: string, updates: { url?: string; title
 export async function deleteCloudReel(id: string): Promise<void> {
   const path = `reels/${id}`;
   try {
+    let targetUrl = '';
+    try {
+      const snap = await getDoc(doc(db, 'reels', id));
+      if (snap.exists()) {
+        targetUrl = snap.data()?.url || '';
+      }
+    } catch (e) {
+      console.warn('Could not read reel before delete:', e);
+    }
+
+    // 1. Delete from Cloud Firestore
     await deleteDoc(doc(db, 'reels', id));
+
+    // 2. Delete physical file from permanent storage if uploaded file
+    if (targetUrl && targetUrl.startsWith('/uploads/')) {
+      fetch(`/api/upload?url=${encodeURIComponent(targetUrl)}`, { method: 'DELETE' }).catch(() => {});
+    }
+
+    // 3. Sync with local server
+    fetch(`/api/reels/${encodeURIComponent(id)}`, { method: 'DELETE' }).catch(() => {});
   } catch (error) {
     handleFirestoreError(error, OperationType.DELETE, path);
   }
@@ -574,18 +608,48 @@ export async function deleteCloudLead(id: string): Promise<void> {
   }
 }
 
-// Upload file directly to Firebase Storage
-export async function uploadFileToCloudStorage(file: File): Promise<string> {
-  const fileExt = file.name.split('.').pop() || 'jpg';
-  const fileName = `uploads/${Date.now()}_${Math.random().toString(36).substring(2, 7)}.${fileExt}`;
-  const fileRef = storageRef(storage, fileName);
+// Upload file directly to permanent storage with progress reporting
+export async function uploadFileToCloudStorage(
+  file: File,
+  onProgress?: (percent: number) => void
+): Promise<string> {
+  const formData = new FormData();
+  formData.append('file', file);
 
-  try {
-    const snapshot = await uploadBytes(fileRef, file);
-    const downloadUrl = await getDownloadURL(snapshot.ref);
-    return downloadUrl;
-  } catch (error) {
-    console.error('Storage upload error:', error);
-    throw new Error('فشل رفع الملف إلى التخزين السحابي الدائم');
-  }
+  return new Promise((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    xhr.open('POST', '/api/upload');
+
+    if (xhr.upload && onProgress) {
+      xhr.upload.onprogress = (event) => {
+        if (event.lengthComputable) {
+          const percent = Math.round((event.loaded / event.total) * 100);
+          onProgress(percent);
+        }
+      };
+    }
+
+    xhr.onload = () => {
+      if (xhr.status >= 200 && xhr.status < 300) {
+        try {
+          const res = JSON.parse(xhr.responseText);
+          if (res.success && res.url) {
+            resolve(res.url);
+          } else {
+            reject(new Error(res.error || 'فشل معالجة الملف على الخادم'));
+          }
+        } catch {
+          reject(new Error('استجابة الخادم غير صالحة'));
+        }
+      } else {
+        reject(new Error(`فشل رفع الملف (${xhr.status})`));
+      }
+    };
+
+    xhr.onerror = () => {
+      reject(new Error('خطأ في الاتصال بالخادم أثناء رفع الملف'));
+    };
+
+    xhr.send(formData);
+  });
 }

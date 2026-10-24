@@ -60,24 +60,16 @@ export const api = {
       // 3. Fetch photos
       let photos: GymPhoto[] = [];
       const photosSnap = await getDocs(collection(db, 'photos'));
-      if (!photosSnap.empty) {
-        photosSnap.forEach((d) => {
-          photos.push({ id: d.id, ...(d.data() as Omit<GymPhoto, 'id'>) });
-        });
-      } else {
-        photos = INITIAL_PHOTOS;
-      }
+      photosSnap.forEach((d) => {
+        photos.push({ id: d.id, ...(d.data() as Omit<GymPhoto, 'id'>) });
+      });
 
       // 4. Fetch reels
       let reels: GymReel[] = [];
       const reelsSnap = await getDocs(collection(db, 'reels'));
-      if (!reelsSnap.empty) {
-        reelsSnap.forEach((d) => {
-          reels.push({ id: d.id, ...(d.data() as Omit<GymReel, 'id'>) });
-        });
-      } else {
-        reels = INITIAL_REELS;
-      }
+      reelsSnap.forEach((d) => {
+        reels.push({ id: d.id, ...(d.data() as Omit<GymReel, 'id'>) });
+      });
 
       return {
         settings,
@@ -282,7 +274,7 @@ export const api = {
   },
 
   // Permanent File Storage Upload
-  async uploadFile(file: File): Promise<string> {
-    return uploadFileToCloudStorage(file);
+  async uploadFile(file: File, onProgress?: (percent: number) => void): Promise<string> {
+    return uploadFileToCloudStorage(file, onProgress);
   }
 };

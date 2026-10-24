@@ -55,11 +55,6 @@ export const HeroSection: React.FC<HeroSectionProps> = ({ settings }) => {
       {/* Content Area - Clean, elegant English welcome with no red overlay glare */}
       <div className="relative z-10 max-w-4xl mx-auto flex flex-col items-center text-center px-4">
         
-        {/* Elegant monochrome badge (red highlight removed) */}
-        <div className="inline-flex items-center gap-2 px-5 py-2 rounded-full bg-neutral-900/80 backdrop-blur-md border border-neutral-700/80 text-neutral-200 text-xs sm:text-sm font-bold tracking-widest uppercase mb-6 shadow-xl shadow-black/50">
-          <span>THE ULTIMATE 24/7 FITNESS & BODYBUILDING DESTINATION</span>
-        </div>
-
         {/* Elegant typography (red text replaced with refined white/silver styling) */}
         <h1 className="font-display font-black text-5xl sm:text-7xl md:text-8xl tracking-tight text-white uppercase drop-shadow-[0_4px_30px_rgba(0,0,0,0.95)] mb-4">
           WELCOME TO <span className="text-white drop-shadow-[0_2px_20px_rgba(255,255,255,0.3)]">PUMP CLUB</span>

@@ -164,6 +164,9 @@ export default async function handler(req: any, res: any) {
       if (req.method === 'POST') {
         const url = body?.url;
         const title = body?.title;
+        const aspectRatio = body?.aspectRatio;
+        const fitMode = body?.fitMode;
+        const size = body?.size;
 
         if (!url || typeof url !== 'string' || !url.trim()) {
           return res.status(400).json({ success: false, error: 'رابط الفيديو مطلوب' });
@@ -173,7 +176,10 @@ export default async function handler(req: any, res: any) {
           id: 'reel-' + Date.now() + '-' + Math.random().toString(36).substring(2, 7),
           url: url.trim(),
           title: (title || '').trim(),
-          createdAt: new Date().toISOString()
+          createdAt: new Date().toISOString(),
+          aspectRatio: aspectRatio || '9:16',
+          fitMode: fitMode || 'cover',
+          size: size || 'normal'
         };
 
         if (!Array.isArray(db.reels)) {
@@ -202,6 +208,9 @@ export default async function handler(req: any, res: any) {
 
         if (body?.url) db.reels[idx].url = String(body.url).trim();
         if (body?.title !== undefined) db.reels[idx].title = String(body.title).trim();
+        if (body?.aspectRatio !== undefined) db.reels[idx].aspectRatio = body.aspectRatio;
+        if (body?.fitMode !== undefined) db.reels[idx].fitMode = body.fitMode;
+        if (body?.size !== undefined) db.reels[idx].size = body.size;
 
         writeServerlessDb(db);
         return res.status(200).json({

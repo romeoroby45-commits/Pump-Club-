@@ -175,21 +175,58 @@ export const api = {
   },
 
   // Reels
-  async addReel(reel: { url: string; title: string }): Promise<{ success: boolean; reel: GymReel; reels: GymReel[] }> {
+  async addReel(reel: {
+    url: string;
+    title: string;
+    aspectRatio?: string;
+    fitMode?: 'cover' | 'contain';
+    size?: 'normal' | 'featured';
+  }): Promise<{ success: boolean; reel: GymReel; reels: GymReel[] }> {
     const newReel = await addCloudReel(reel);
     const reelsSnap = await getDocs(collection(db, 'reels'));
     const allReels: GymReel[] = [];
     reelsSnap.forEach((d) => allReels.push({ id: d.id, ...(d.data() as Omit<GymReel, 'id'>) }));
 
+    // Sync with local backend
+    fetch('/api/reels', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(reel)
+    }).catch(() => {});
+
     return { success: true, reel: newReel, reels: allReels };
   },
 
-  async updateReel(id: string, reel: { url?: string; title?: string }): Promise<{ success: boolean; reel: GymReel; reels: GymReel[] }> {
+  async updateReel(
+    id: string,
+    reel: {
+      url?: string;
+      title?: string;
+      aspectRatio?: string;
+      fitMode?: 'cover' | 'contain';
+      size?: 'normal' | 'featured';
+    }
+  ): Promise<{ success: boolean; reel: GymReel; reels: GymReel[] }> {
     await updateCloudReel(id, reel);
     const reelsSnap = await getDocs(collection(db, 'reels'));
     const allReels: GymReel[] = [];
     reelsSnap.forEach((d) => allReels.push({ id: d.id, ...(d.data() as Omit<GymReel, 'id'>) }));
-    const updated = allReels.find(r => r.id === id) || { id, url: reel.url || '', title: reel.title || '', createdAt: '' };
+    const updated = allReels.find(r => r.id === id) || {
+      id,
+      url: reel.url || '',
+      title: reel.title || '',
+      aspectRatio: reel.aspectRatio || '9:16',
+      fitMode: reel.fitMode || 'cover',
+      size: reel.size || 'normal',
+      createdAt: ''
+    };
+
+    // Sync with local backend
+    fetch(`/api/reels/${encodeURIComponent(id)}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(reel)
+    }).catch(() => {});
 
     return { success: true, reel: updated, reels: allReels };
   },

@@ -59,6 +59,7 @@ interface DatabaseSchema {
     heroBadgeText: string;
     ctaButtonText: string;
     heroAnimatedBgUrl: string;
+    heroOverlayOpacity?: number;
   };
   photos: Array<{
     id: string;
@@ -71,6 +72,9 @@ interface DatabaseSchema {
     url: string;
     title: string;
     createdAt: string;
+    aspectRatio?: string;
+    fitMode?: 'cover' | 'contain';
+    size?: 'normal' | 'featured';
   }>;
   plans: Array<{
     id: string;
@@ -365,7 +369,7 @@ app.get('/api/reels', (req: Request, res: Response) => {
 });
 
 app.post('/api/reels', (req: Request, res: Response) => {
-  const { url, title } = req.body;
+  const { url, title, aspectRatio, fitMode, size } = req.body;
   if (!url || typeof url !== 'string') {
     return res.status(400).json({ error: 'رابط الفيديو مطلوب' });
   }
@@ -374,7 +378,10 @@ app.post('/api/reels', (req: Request, res: Response) => {
     id: 'reel-' + Date.now() + '-' + Math.random().toString(36).substring(2, 7),
     url: url.trim(),
     title: (title || '').trim(),
-    createdAt: new Date().toISOString()
+    createdAt: new Date().toISOString(),
+    aspectRatio: aspectRatio || '9:16',
+    fitMode: fitMode || 'cover',
+    size: size || 'normal'
   };
   db.reels.unshift(newReel);
   writeDb(db);
@@ -383,7 +390,7 @@ app.post('/api/reels', (req: Request, res: Response) => {
 
 app.put('/api/reels/:id', (req: Request, res: Response) => {
   const { id } = req.params;
-  const { url, title } = req.body;
+  const { url, title, aspectRatio, fitMode, size } = req.body;
   const db = readDb();
   const idx = db.reels.findIndex(r => r.id === id);
   if (idx === -1) {
@@ -391,6 +398,9 @@ app.put('/api/reels/:id', (req: Request, res: Response) => {
   }
   if (url) db.reels[idx].url = url.trim();
   if (title !== undefined) db.reels[idx].title = title.trim();
+  if (aspectRatio !== undefined) db.reels[idx].aspectRatio = aspectRatio;
+  if (fitMode !== undefined) db.reels[idx].fitMode = fitMode;
+  if (size !== undefined) db.reels[idx].size = size;
   writeDb(db);
   res.json({ success: true, reel: db.reels[idx], reels: db.reels });
 });

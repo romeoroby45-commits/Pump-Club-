@@ -110,7 +110,8 @@ export const INITIAL_SETTINGS: GymSettings = {
   logoUrl: 'https://i.postimg.cc/QNWQb6ND/1000254467-removebg-preview.png',
   heroBadgeText: 'ELITE FITNESS & BODYBUILDING',
   ctaButtonText: 'JOIN NOW / اشترك الآن',
-  heroAnimatedBgUrl: 'https://images.unsplash.com/photo-1534438327276-14e5300c3a48?q=80&w=1470&auto=format&fit=crop'
+  heroAnimatedBgUrl: 'https://images.unsplash.com/photo-1534438327276-14e5300c3a48?q=80&w=1470&auto=format&fit=crop',
+  heroOverlayOpacity: 30
 };
 
 export const INITIAL_PLANS: SubscriptionPlan[] = [
@@ -432,14 +433,23 @@ export async function deleteCloudPhoto(id: string): Promise<void> {
 }
 
 // Reels CRUD
-export async function addCloudReel(reel: { url: string; title: string }): Promise<GymReel> {
+export async function addCloudReel(reel: {
+  url: string;
+  title: string;
+  aspectRatio?: string;
+  fitMode?: 'cover' | 'contain';
+  size?: 'normal' | 'featured';
+}): Promise<GymReel> {
   const id = 'reel-' + Date.now() + '-' + Math.random().toString(36).substring(2, 7);
   const path = `reels/${id}`;
   const newReel: GymReel = {
     id,
     url: reel.url.trim(),
     title: (reel.title || '').trim(),
-    createdAt: new Date().toISOString()
+    createdAt: new Date().toISOString(),
+    aspectRatio: reel.aspectRatio || '9:16',
+    fitMode: reel.fitMode || 'cover',
+    size: reel.size || 'normal'
   };
 
   try {
@@ -450,12 +460,24 @@ export async function addCloudReel(reel: { url: string; title: string }): Promis
   }
 }
 
-export async function updateCloudReel(id: string, updates: { url?: string; title?: string }): Promise<void> {
+export async function updateCloudReel(
+  id: string,
+  updates: {
+    url?: string;
+    title?: string;
+    aspectRatio?: string;
+    fitMode?: 'cover' | 'contain';
+    size?: 'normal' | 'featured';
+  }
+): Promise<void> {
   const path = `reels/${id}`;
   try {
     const data: Record<string, any> = {};
     if (updates.url !== undefined) data.url = updates.url.trim();
     if (updates.title !== undefined) data.title = updates.title.trim();
+    if (updates.aspectRatio !== undefined) data.aspectRatio = updates.aspectRatio;
+    if (updates.fitMode !== undefined) data.fitMode = updates.fitMode;
+    if (updates.size !== undefined) data.size = updates.size;
     await updateDoc(doc(db, 'reels', id), data);
   } catch (error) {
     handleFirestoreError(error, OperationType.UPDATE, path);

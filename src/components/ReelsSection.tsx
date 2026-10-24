@@ -68,18 +68,40 @@ export const ReelsSection: React.FC<ReelsSectionProps> = ({ reels, onOpenAdmin }
           )}
         </div>
       ) : (
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6 auto-rows-fr">
           {reels.map((reel) => {
             const videoInfo = parseVideoUrl(reel.url);
             const isMuted = mutedStates[reel.id] ?? true;
+            const isFeatured = reel.size === 'featured';
+            const fitMode = reel.fitMode || 'cover';
+            const fitClass = fitMode === 'contain' ? 'object-contain' : 'object-cover';
+
+            // Aspect ratio mapping
+            let aspectClass = 'aspect-[9/16]';
+            let ratioLabel = '9:16';
+            if (reel.aspectRatio === '16:9') {
+              aspectClass = 'aspect-video';
+              ratioLabel = '16:9';
+            } else if (reel.aspectRatio === '1:1') {
+              aspectClass = 'aspect-square';
+              ratioLabel = '1:1';
+            } else if (reel.aspectRatio === '4:5') {
+              aspectClass = 'aspect-[4/5]';
+              ratioLabel = '4:5';
+            } else if (reel.aspectRatio === '4:3') {
+              aspectClass = 'aspect-[4/3]';
+              ratioLabel = '4:3';
+            }
 
             return (
               <div
                 key={reel.id}
-                className="group relative rounded-2xl overflow-hidden bg-neutral-900 border border-neutral-800 hover:border-red-600 transition-all duration-300 flex flex-col shadow-lg"
+                className={`group relative rounded-2xl overflow-hidden bg-neutral-900/90 border border-neutral-800 hover:border-red-600/80 transition-all duration-300 flex flex-col shadow-xl ${
+                  isFeatured ? 'sm:col-span-2 lg:col-span-2' : 'col-span-1'
+                }`}
               >
-                {/* Video Media Container - 9:16 or 4:5 vertical reel format */}
-                <div className="relative aspect-[9/14] bg-black overflow-hidden flex items-center justify-center">
+                {/* Video Media Container with Dynamic Aspect Ratio */}
+                <div className={`relative ${aspectClass} bg-black overflow-hidden flex items-center justify-center w-full`}>
                   {videoInfo.type === 'youtube' && videoInfo.embedUrl ? (
                     <iframe
                       src={videoInfo.embedUrl}
@@ -89,10 +111,10 @@ export const ReelsSection: React.FC<ReelsSectionProps> = ({ reels, onOpenAdmin }
                       allowFullScreen
                     />
                   ) : videoInfo.type === 'direct' && videoInfo.directUrl ? (
-                    <div className="relative w-full h-full">
+                    <div className="relative w-full h-full bg-black flex items-center justify-center">
                       <video
                         src={videoInfo.directUrl}
-                        className="w-full h-full object-cover"
+                        className={`w-full h-full ${fitClass}`}
                         loop
                         playsInline
                         muted={isMuted}
@@ -115,15 +137,31 @@ export const ReelsSection: React.FC<ReelsSectionProps> = ({ reels, onOpenAdmin }
                       </a>
                     </div>
                   )}
+
+                  {/* Orientation & Size Badges */}
+                  <div className="absolute top-2.5 right-2.5 flex items-center gap-1.5 pointer-events-none z-10 opacity-70 group-hover:opacity-100 transition-opacity">
+                    {isFeatured && (
+                      <span className="px-2 py-0.5 rounded-full bg-red-600/90 text-white font-bold text-[10px] shadow">
+                        مميز
+                      </span>
+                    )}
+                    <span className="px-1.5 py-0.5 rounded bg-black/70 backdrop-blur-sm border border-neutral-700/80 text-neutral-300 font-mono text-[10px]">
+                      {ratioLabel}
+                    </span>
+                  </div>
                 </div>
 
                 {/* Reel Info */}
-                <div className="p-4 bg-neutral-900/90 border-t border-neutral-800 flex items-center justify-between">
-                  <div className="truncate">
+                <div className="p-3.5 bg-neutral-900 border-t border-neutral-800 flex items-center justify-between">
+                  <div className="truncate flex-1">
                     <h4 className="text-white font-bold text-sm truncate">
                       {reel.title || 'تمرين في PUMP CLUB'}
                     </h4>
-                    <span className="text-[11px] text-neutral-400">ريلز وتدريبات</span>
+                    <span className="text-[11px] text-neutral-400 flex items-center gap-1.5 mt-0.5">
+                      <span>فيديو وتدريبات</span>
+                      <span className="text-neutral-600">•</span>
+                      <span>{fitMode === 'contain' ? 'عرض كامل' : 'ملء الإطار'}</span>
+                    </span>
                   </div>
                 </div>
               </div>

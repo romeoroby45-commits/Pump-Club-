@@ -12,6 +12,7 @@ export interface GymSettings {
   heroBadgeText: string;
   ctaButtonText: string;
   heroAnimatedBgUrl: string;
+  heroOverlayOpacity?: number;
 }
 
 export interface GymPhoto {
@@ -26,6 +27,9 @@ export interface GymReel {
   url: string;
   title: string;
   createdAt: string;
+  aspectRatio?: '9:16' | '16:9' | '1:1' | '4:5' | '4:3' | string;
+  fitMode?: 'cover' | 'contain';
+  size?: 'normal' | 'featured';
 }
 
 export interface SubscriptionPlan {

@@ -3,7 +3,8 @@ import {
   X, Lock, ShieldCheck, Settings, Camera, Film, CreditCard,
   Plus, Trash2, Edit2, Check, ArrowUp, ArrowDown, ExternalLink,
   Save, RefreshCw, LogOut, MessageSquare, AlertCircle, Upload,
-  Cloud, CheckCircle2, Play, Eye, FileVideo, ImageIcon, Loader2
+  Cloud, CheckCircle2, Play, Eye, FileVideo, ImageIcon, Loader2,
+  Sliders, Sun, Maximize, LayoutGrid
 } from 'lucide-react';
 import { GymPhoto, GymReel, GymSettings, SubscriptionPlan } from '../types';
 import { api } from '../services/api';
@@ -72,13 +73,22 @@ export const AdminModal: React.FC<AdminModalProps> = ({
   // Reel/Video state & Direct Upload Preview
   const [newReelUrl, setNewReelUrl] = useState('');
   const [newReelTitle, setNewReelTitle] = useState('');
+  const [newReelAspectRatio, setNewReelAspectRatio] = useState<string>('9:16');
+  const [newReelFitMode, setNewReelFitMode] = useState<'cover' | 'contain'>('cover');
+  const [newReelSize, setNewReelSize] = useState<'normal' | 'featured'>('normal');
+
   const [reelFile, setReelFile] = useState<File | null>(null);
   const [reelPreviewUrl, setReelPreviewUrl] = useState<string | null>(null);
   const [reelUploadProgress, setReelUploadProgress] = useState<number>(0);
   const [isUploadingReel, setIsUploadingReel] = useState(false);
+
+  // Edit Reel states
   const [editingReelId, setEditingReelId] = useState<string | null>(null);
   const [editReelUrl, setEditReelUrl] = useState('');
   const [editReelTitle, setEditReelTitle] = useState('');
+  const [editReelAspectRatio, setEditReelAspectRatio] = useState<string>('9:16');
+  const [editReelFitMode, setEditReelFitMode] = useState<'cover' | 'contain'>('cover');
+  const [editReelSize, setEditReelSize] = useState<'normal' | 'featured'>('normal');
   const [reelError, setReelError] = useState('');
 
   // Deletion operation state
@@ -373,10 +383,19 @@ export const AdminModal: React.FC<AdminModalProps> = ({
         finalUrl = await api.uploadFile(reelFile, (pct) => setReelUploadProgress(pct));
       }
 
-      await api.addReel({ url: finalUrl, title: newReelTitle.trim() });
+      await api.addReel({
+        url: finalUrl,
+        title: newReelTitle.trim(),
+        aspectRatio: newReelAspectRatio,
+        fitMode: newReelFitMode as 'cover' | 'contain',
+        size: newReelSize as 'normal' | 'featured'
+      });
       handleCancelReelPreview();
       setNewReelUrl('');
       setNewReelTitle('');
+      setNewReelAspectRatio('9:16');
+      setNewReelFitMode('cover');
+      setNewReelSize('normal');
       onDataUpdated();
     } catch (err: any) {
       setReelError(err.message || 'فشل إضافة الفيديو');
@@ -403,7 +422,13 @@ export const AdminModal: React.FC<AdminModalProps> = ({
   // Edit Reel
   const handleUpdateReel = async (id: string) => {
     try {
-      await api.updateReel(id, { url: editReelUrl, title: editReelTitle });
+      await api.updateReel(id, {
+        url: editReelUrl,
+        title: editReelTitle,
+        aspectRatio: editReelAspectRatio,
+        fitMode: editReelFitMode as 'cover' | 'contain',
+        size: editReelSize as 'normal' | 'featured'
+      });
       setEditingReelId(null);
       onDataUpdated();
     } catch (err: any) {
@@ -820,6 +845,93 @@ export const AdminModal: React.FC<AdminModalProps> = ({
                     </p>
                   </div>
 
+                  {/* Hero Overlay Opacity & Clarity Control */}
+                  <div className="p-4 rounded-2xl bg-neutral-950 border border-neutral-800 space-y-4">
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                      <div className="flex items-center gap-2">
+                        <Sun className="w-4 h-4 text-amber-400" />
+                        <div>
+                          <label className="block text-xs font-bold text-white">
+                            درجة وضوح وتعتيم صورة الواجهة الرئيسية (Hero Overlay Opacity)
+                          </label>
+                          <p className="text-[11px] text-neutral-400 mt-0.5">
+                            تحكم في شفافية طبقة التعتيم لجعل الصورة واضحة وجلية تماماً (من 0% صافية بالكامل حتى 100% داكنة)
+                          </p>
+                        </div>
+                      </div>
+
+                      <div className="flex items-center gap-2">
+                        <span className="px-3 py-1 bg-neutral-900 border border-neutral-700 text-amber-300 font-mono font-bold text-xs rounded-lg">
+                          {settingsForm.heroOverlayOpacity !== undefined ? settingsForm.heroOverlayOpacity : 30}% تعتيم
+                        </span>
+                      </div>
+                    </div>
+
+                    {/* Range Slider */}
+                    <div className="space-y-2">
+                      <input
+                        type="range"
+                        min="0"
+                        max="100"
+                        step="5"
+                        value={settingsForm.heroOverlayOpacity !== undefined ? settingsForm.heroOverlayOpacity : 30}
+                        onChange={(e) => setSettingsForm({ ...settingsForm, heroOverlayOpacity: Number(e.target.value) })}
+                        className="w-full h-2 bg-neutral-800 rounded-lg appearance-none cursor-pointer accent-amber-500"
+                      />
+                      <div className="flex justify-between text-[10px] text-neutral-500 font-bold px-1">
+                        <span>0% (صورة واضحة وناصعة تماماً)</span>
+                        <span>30% (متوازنة ومقروءة - موصى بها)</span>
+                        <span>100% (تعتيم كامل داكن)</span>
+                      </div>
+                    </div>
+
+                    {/* Quick Presets */}
+                    <div className="flex flex-wrap gap-2 pt-1">
+                      <span className="text-[11px] text-neutral-400 self-center ml-1">إعدادات سريعة:</span>
+                      {[
+                        { label: 'صافية 0%', val: 0 },
+                        { label: 'واضحة جداً 15%', val: 15 },
+                        { label: 'متوازنة 30%', val: 30 },
+                        { label: 'متوسطة 50%', val: 50 },
+                        { label: 'داكنة 75%', val: 75 }
+                      ].map((preset) => (
+                        <button
+                          key={preset.val}
+                          type="button"
+                          onClick={() => setSettingsForm({ ...settingsForm, heroOverlayOpacity: preset.val })}
+                          className={`px-2.5 py-1 text-xs rounded-lg border transition-all cursor-pointer ${
+                            (settingsForm.heroOverlayOpacity ?? 30) === preset.val
+                              ? 'bg-amber-500/20 border-amber-500/60 text-amber-300 font-bold'
+                              : 'bg-neutral-900 border-neutral-800 text-neutral-400 hover:text-white'
+                          }`}
+                        >
+                          {preset.label}
+                        </button>
+                      ))}
+                    </div>
+
+                    {/* Live Preview Box */}
+                    <div className="relative h-24 rounded-xl overflow-hidden border border-neutral-800 flex items-center justify-center text-center">
+                      <img
+                        src={settingsForm.heroAnimatedBgUrl || "https://images.unsplash.com/photo-1534438327276-14e5300c3a48?q=80&w=1470&auto=format&fit=crop"}
+                        alt="Hero Preview"
+                        className="absolute inset-0 w-full h-full object-cover filter brightness-100"
+                      />
+                      <div
+                        className="absolute inset-0 bg-black transition-opacity duration-200"
+                        style={{ opacity: (settingsForm.heroOverlayOpacity ?? 30) / 100 }}
+                      />
+                      <div className="relative z-10 px-4">
+                        <p className="text-white font-display font-black text-sm drop-shadow-[0_2px_10px_rgba(0,0,0,0.95)]">
+                          معاينة: WELCOME TO PUMP CLUB
+                        </p>
+                        <p className="text-neutral-200 text-[10px] drop-shadow-[0_2px_8px_rgba(0,0,0,0.95)]">
+                          وضوح الصورة: {100 - (settingsForm.heroOverlayOpacity ?? 30)}%
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+
                   <div className="pt-2 flex flex-wrap items-center gap-3">
                     <button
                       type="submit"
@@ -1219,7 +1331,8 @@ export const AdminModal: React.FC<AdminModalProps> = ({
                       </div>
                     )}
 
-                    <form onSubmit={handleAddReel} className="space-y-3">
+                    <form onSubmit={handleAddReel} className="space-y-4">
+                      {/* Media URL & Title */}
                       <div className="grid grid-cols-1 sm:grid-cols-12 gap-3">
                         <div className="sm:col-span-7">
                           <input
@@ -1237,7 +1350,7 @@ export const AdminModal: React.FC<AdminModalProps> = ({
                             dir="ltr"
                           />
                         </div>
-                        <div className="sm:col-span-3">
+                        <div className="sm:col-span-5">
                           <input
                             type="text"
                             placeholder="عنوان المقطع (اختياري)"
@@ -1247,25 +1360,88 @@ export const AdminModal: React.FC<AdminModalProps> = ({
                             className="w-full px-3.5 py-2.5 bg-neutral-900 border border-neutral-800 rounded-xl text-white text-xs focus:border-red-600 focus:outline-none"
                           />
                         </div>
-                        <div className="sm:col-span-2">
-                          <button
-                            type="submit"
-                            disabled={isUploadingReel || (!reelFile && !newReelUrl.trim())}
-                            className="w-full py-2.5 bg-red-600 hover:bg-red-700 disabled:opacity-50 text-white font-bold text-xs rounded-xl transition-colors flex items-center justify-center gap-1.5 cursor-pointer shadow-md"
-                          >
-                            {isUploadingReel ? (
-                              <>
-                                <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                                <span>جاري الرفع...</span>
-                              </>
-                            ) : (
-                              <>
-                                <Plus className="w-4 h-4" />
-                                <span>{reelFile ? 'رفع وحفظ' : 'إضافة'}</span>
-                              </>
-                            )}
-                          </button>
+                      </div>
+
+                      {/* Video Display Settings Card */}
+                      <div className="p-3.5 bg-neutral-900/80 border border-neutral-800 rounded-xl space-y-3">
+                        <div className="flex items-center gap-2 text-xs font-bold text-white border-b border-neutral-800/80 pb-2">
+                          <Sliders className="w-3.5 h-3.5 text-red-500" />
+                          <span>إعدادات مظهر وأبعاد الفيديو على الموقع (Video Display Settings)</span>
                         </div>
+
+                        <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                          {/* 1. Orientation & Aspect Ratio */}
+                          <div>
+                            <label className="block text-[11px] font-bold text-neutral-300 mb-1.5">
+                              اتجاه ونسبة الأبعاد (Aspect Ratio)
+                            </label>
+                            <select
+                              value={newReelAspectRatio}
+                              onChange={(e) => setNewReelAspectRatio(e.target.value)}
+                              disabled={isUploadingReel}
+                              className="w-full px-3 py-2 bg-neutral-950 border border-neutral-700 rounded-xl text-white text-xs focus:border-red-600 focus:outline-none"
+                            >
+                              <option value="9:16">📱 عمودي ريلز كامل (9:16 Reels)</option>
+                              <option value="16:9">🖥️ أفقي سينمائي عريض (16:9 Cinema)</option>
+                              <option value="1:1">⬛ مربع قياسي (1:1 Square)</option>
+                              <option value="4:5">🖼️ عمودي متوسط (4:5 Feed Post)</option>
+                              <option value="4:3">📺 شاشة كلاسيكية (4:3 Classic)</option>
+                            </select>
+                          </div>
+
+                          {/* 2. Fit Mode */}
+                          <div>
+                            <label className="block text-[11px] font-bold text-neutral-300 mb-1.5">
+                              طريقة ملاءمة الفيديو (Fit Mode)
+                            </label>
+                            <select
+                              value={newReelFitMode}
+                              onChange={(e) => setNewReelFitMode(e.target.value as 'cover' | 'contain')}
+                              disabled={isUploadingReel}
+                              className="w-full px-3 py-2 bg-neutral-950 border border-neutral-700 rounded-xl text-white text-xs focus:border-red-600 focus:outline-none"
+                            >
+                              <option value="cover">✂️ ملء الإطار بالكامل (Fill & Cover)</option>
+                              <option value="contain">🎬 احتواء كامل بدون قص (Contain Full)</option>
+                            </select>
+                          </div>
+
+                          {/* 3. Display Size / Column Span */}
+                          <div>
+                            <label className="block text-[11px] font-bold text-neutral-300 mb-1.5">
+                              حجم العرض في الشبكة (Display Size)
+                            </label>
+                            <select
+                              value={newReelSize}
+                              onChange={(e) => setNewReelSize(e.target.value as 'normal' | 'featured')}
+                              disabled={isUploadingReel}
+                              className="w-full px-3 py-2 bg-neutral-950 border border-neutral-700 rounded-xl text-white text-xs focus:border-red-600 focus:outline-none"
+                            >
+                              <option value="normal">🔹 حجم عادي (1 عمود)</option>
+                              <option value="featured">⭐ بارز ومميز عريض (2 عمود)</option>
+                            </select>
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Submit Button */}
+                      <div>
+                        <button
+                          type="submit"
+                          disabled={isUploadingReel || (!reelFile && !newReelUrl.trim())}
+                          className="w-full py-3 bg-red-600 hover:bg-red-700 disabled:opacity-50 text-white font-bold text-xs rounded-xl transition-colors flex items-center justify-center gap-1.5 cursor-pointer shadow-md"
+                        >
+                          {isUploadingReel ? (
+                            <>
+                              <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                              <span>جاري الرفع والحفظ...</span>
+                            </>
+                          ) : (
+                            <>
+                              <Plus className="w-4 h-4" />
+                              <span>{reelFile ? 'رفع وحفظ الفيديو بالإعدادات المختارة' : 'إضافة وحفظ الفيديو'}</span>
+                            </>
+                          )}
+                        </button>
                       </div>
                     </form>
                   </div>
@@ -1287,13 +1463,22 @@ export const AdminModal: React.FC<AdminModalProps> = ({
                           const isEditing = editingReelId === r.id;
                           const isDeleting = deletingId === r.id;
                           const videoInfo = parseVideoUrl(r.url);
+                          const isFeatured = r.size === 'featured';
+                          const fitClass = r.fitMode === 'contain' ? 'object-contain' : 'object-cover';
+
+                          // Aspect class for preview
+                          let aspectClass = 'aspect-[9/14]';
+                          if (r.aspectRatio === '16:9') aspectClass = 'aspect-video';
+                          else if (r.aspectRatio === '1:1') aspectClass = 'aspect-square';
+                          else if (r.aspectRatio === '4:5') aspectClass = 'aspect-[4/5]';
+                          else if (r.aspectRatio === '4:3') aspectClass = 'aspect-[4/3]';
 
                           return (
                             <div
                               key={r.id}
                               className="rounded-xl overflow-hidden bg-neutral-950 border border-neutral-800 flex flex-col group transition-all"
                             >
-                              <div className="aspect-[9/12] bg-black flex items-center justify-center overflow-hidden">
+                              <div className={`relative ${aspectClass} bg-black flex items-center justify-center overflow-hidden`}>
                                 {videoInfo.type === 'youtube' && videoInfo.embedUrl ? (
                                   <iframe
                                     src={videoInfo.embedUrl}
@@ -1305,45 +1490,109 @@ export const AdminModal: React.FC<AdminModalProps> = ({
                                     src={videoInfo.directUrl}
                                     controls
                                     playsInline
-                                    className="w-full h-full object-cover"
+                                    className={`w-full h-full ${fitClass}`}
                                   />
                                 ) : (
                                   <div className="text-neutral-500 text-xs p-4 text-center">
                                     {r.url}
                                   </div>
                                 )}
+
+                                {/* Card Badges */}
+                                <div className="absolute top-2 right-2 flex flex-wrap gap-1 pointer-events-none z-10">
+                                  {isFeatured && (
+                                    <span className="px-1.5 py-0.5 rounded bg-red-600 text-white font-bold text-[10px]">
+                                      مميز 2X
+                                    </span>
+                                  )}
+                                  <span className="px-1.5 py-0.5 rounded bg-black/80 border border-neutral-700 text-neutral-300 font-mono text-[10px]">
+                                    {r.aspectRatio || '9:16'}
+                                  </span>
+                                  <span className="px-1.5 py-0.5 rounded bg-black/80 border border-neutral-700 text-neutral-300 text-[10px]">
+                                    {r.fitMode === 'contain' ? 'احتواء' : 'ملء'}
+                                  </span>
+                                </div>
                               </div>
 
                               <div className="p-3 flex-1 flex flex-col justify-between space-y-2">
                                 {isEditing ? (
-                                  <div className="space-y-2">
-                                    <input
-                                      type="text"
-                                      value={editReelTitle}
-                                      onChange={(e) => setEditReelTitle(e.target.value)}
-                                      placeholder="عنوان الفيديو"
-                                      className="w-full px-2 py-1 bg-neutral-900 border border-neutral-700 rounded text-xs text-white"
-                                    />
-                                    <input
-                                      type="url"
-                                      value={editReelUrl}
-                                      onChange={(e) => setEditReelUrl(e.target.value)}
-                                      placeholder="رابط الفيديو"
-                                      className="w-full px-2 py-1 bg-neutral-900 border border-neutral-700 rounded text-xs text-white font-mono"
-                                      dir="ltr"
-                                    />
-                                    <div className="flex gap-2">
+                                  <div className="space-y-2.5">
+                                    <div>
+                                      <label className="text-[10px] text-neutral-400 block mb-0.5">عنوان الفيديو:</label>
+                                      <input
+                                        type="text"
+                                        value={editReelTitle}
+                                        onChange={(e) => setEditReelTitle(e.target.value)}
+                                        placeholder="عنوان الفيديو"
+                                        className="w-full px-2.5 py-1.5 bg-neutral-900 border border-neutral-700 rounded-lg text-xs text-white"
+                                      />
+                                    </div>
+                                    <div>
+                                      <label className="text-[10px] text-neutral-400 block mb-0.5">رابط الفيديو:</label>
+                                      <input
+                                        type="url"
+                                        value={editReelUrl}
+                                        onChange={(e) => setEditReelUrl(e.target.value)}
+                                        placeholder="رابط الفيديو"
+                                        className="w-full px-2.5 py-1.5 bg-neutral-900 border border-neutral-700 rounded-lg text-xs text-white font-mono"
+                                        dir="ltr"
+                                      />
+                                    </div>
+
+                                    {/* Edit Display Options */}
+                                    <div className="grid grid-cols-3 gap-1.5 pt-1 border-t border-neutral-800">
+                                      <div>
+                                        <label className="text-[9px] text-neutral-400 block mb-0.5">الأبعاد:</label>
+                                        <select
+                                          value={editReelAspectRatio}
+                                          onChange={(e) => setEditReelAspectRatio(e.target.value)}
+                                          className="w-full px-1.5 py-1 bg-neutral-900 border border-neutral-700 rounded text-[11px] text-white"
+                                        >
+                                          <option value="9:16">9:16 ريلز</option>
+                                          <option value="16:9">16:9 سينما</option>
+                                          <option value="1:1">1:1 مربع</option>
+                                          <option value="4:5">4:5 منشور</option>
+                                          <option value="4:3">4:3 كلاسيك</option>
+                                        </select>
+                                      </div>
+
+                                      <div>
+                                        <label className="text-[9px] text-neutral-400 block mb-0.5">الملاءمة:</label>
+                                        <select
+                                          value={editReelFitMode}
+                                          onChange={(e) => setEditReelFitMode(e.target.value as 'cover' | 'contain')}
+                                          className="w-full px-1.5 py-1 bg-neutral-900 border border-neutral-700 rounded text-[11px] text-white"
+                                        >
+                                          <option value="cover">ملء الإطار</option>
+                                          <option value="contain">احتواء كامل</option>
+                                        </select>
+                                      </div>
+
+                                      <div>
+                                        <label className="text-[9px] text-neutral-400 block mb-0.5">الحجم:</label>
+                                        <select
+                                          value={editReelSize}
+                                          onChange={(e) => setEditReelSize(e.target.value as 'normal' | 'featured')}
+                                          className="w-full px-1.5 py-1 bg-neutral-900 border border-neutral-700 rounded text-[11px] text-white"
+                                        >
+                                          <option value="normal">عادي 1X</option>
+                                          <option value="featured">مميز 2X</option>
+                                        </select>
+                                      </div>
+                                    </div>
+
+                                    <div className="flex gap-2 pt-1">
                                       <button
                                         type="button"
                                         onClick={() => handleUpdateReel(r.id)}
-                                        className="px-2 py-1 bg-emerald-600 text-white text-xs rounded hover:bg-emerald-700 cursor-pointer"
+                                        className="flex-1 py-1.5 bg-emerald-600 text-white text-xs font-bold rounded-lg hover:bg-emerald-700 cursor-pointer text-center"
                                       >
-                                        حفظ
+                                        حفظ التعديل
                                       </button>
                                       <button
                                         type="button"
                                         onClick={() => setEditingReelId(null)}
-                                        className="px-2 py-1 bg-neutral-800 text-neutral-300 text-xs rounded hover:bg-neutral-700 cursor-pointer"
+                                        className="px-3 py-1.5 bg-neutral-800 text-neutral-300 text-xs rounded-lg hover:bg-neutral-700 cursor-pointer"
                                       >
                                         إلغاء
                                       </button>
@@ -1361,11 +1610,14 @@ export const AdminModal: React.FC<AdminModalProps> = ({
                                           setEditingReelId(r.id);
                                           setEditReelTitle(r.title);
                                           setEditReelUrl(r.url);
+                                          setEditReelAspectRatio(r.aspectRatio || '9:16');
+                                          setEditReelFitMode((r.fitMode as 'cover' | 'contain') || 'cover');
+                                          setEditReelSize((r.size as 'normal' | 'featured') || 'normal');
                                         }}
                                         className="p-1.5 text-neutral-400 hover:text-white rounded hover:bg-neutral-900 text-xs flex items-center gap-1 cursor-pointer"
                                       >
                                         <Edit2 className="w-3.5 h-3.5" />
-                                        <span>تعديل</span>
+                                        <span>تعديل الإعدادات</span>
                                       </button>
 
                                       <button
